@@ -1,17 +1,22 @@
 const std = @import("std");
 const rogue = @import("rogue");
-const g = @cImport({
-    @cInclude("GLFW/glfw3.h");
-});
+const glfw = @import("zglfw");
 
 pub fn main() !void {
-    std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
-    var window: g.GLFWwindow = undefined;
-    if (g.glfwInit() != 0) @panic("failed to initialize GLFW");
-    window = g.glfwCreateWindow(800, 600, "Hello World", null, null);
-    if (!window) {
-        g.glfwTerminate();
-        @panic("failed to initialize window");
+    std.debug.print("Hello we're back", .{});
+    try glfw.init();
+    defer glfw.terminate();
+
+    const window = try glfw.createWindow(600, 600, "Hello window", null);
+    defer window.destroy();
+
+    // setup graphics context
+    glfw.makeContextCurrent(window);
+
+    while (!window.shouldClose()) {
+        glfw.pollEvents();
+        // render things
+        window.swapBuffers();
     }
 }
 
