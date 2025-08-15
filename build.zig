@@ -1,6 +1,7 @@
 const std = @import("std");
 
 pub fn build(b: *std.Build) void {
+    const assets_dir = "assets/";
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
     const mod = b.addModule("rogue", .{
@@ -20,18 +21,36 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    // ADDING ZGLFW
+    const zgui = b.dependency("zgui", .{
+        .shared = false,
+        .with_implot = false,
+    });
+    exe.root_module.addImport("zgui", zgui.module("root"));
+    exe.linkLibrary(zgui.artifact("imgui"));
+
     const zglfw = b.dependency("zglfw", .{});
     exe.root_module.addImport("zglfw", zglfw.module("root"));
-    if (target.result.os.tag != .emscripten) {
-        exe.linkLibrary(zglfw.artifact("glfw"));
-    }
+    exe.linkLibrary(zglfw.artifact("glfw"));
 
-    // LINK AGAINST SYSTEM LIBRARIES
-    // const glfw_path = std.Build.LazyPath{ .cwd_relative = "/usr/lib/x86_64-linux-gnu/" };
-    // exe.root_module.addLibraryPath(glfw_path);
-    // exe.root_module.linkSystemLibrary("glfw3", .{ .needed = true });
+    @import("zgpu").addLibraryPathsTo(exe);
+    const zgpu = b.dependency("zgpu", .{});
+    exe.root_module.addImport("zgpu", zgpu.module("root"));
+    exe.linkLibrary(zgpu.artifact("zdawn"));
 
+    const zmath = b.dependency("zmath", .{});
+    exe.root_module.addImport("zmath", zmath.module("root"));
+
+    const exe_options = b.addOptions();
+    exe.root_module.addOptions("build_options", exe_options);
+    exe_options.addOption([]const u8, "assets", assets_dir);
+
+    const content_path = b.pathJoin(&.{ "", assets_dir });
+    const install_content_step = b.addInstallDirectory(.{
+        .source_dir = b.path(content_path),
+        .install_dir = .{ .custom = "" },
+        .install_subdir = b.pathJoin(&.{ "bin", assets_dir }),
+    });
+    exe.step.dependOn(&install_content_step.step);
     // This declares intent for the executable to be installed into the
     // install prefix when running `zig build` (i.e. when executing the default
     // step). By default the install prefix is `zig-out/` but can be overridden

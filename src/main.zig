@@ -1,39 +1,80 @@
 const std = @import("std");
+
 const rogue = @import("rogue");
-const glfw = @import("zglfw");
+const zglfw = @import("zglfw");
+const zgpu = @import("zgpu");
+const wgpu = zgpu.wgpu;
+const zgui = @import("zgui");
+const content_dir = @import("build_options").assets;
 
 pub fn main() !void {
-    std.debug.print("Hello we're back", .{});
-    try glfw.init();
-    defer glfw.terminate();
+    try zglfw.init();
+    defer zglfw.terminate();
 
-    const window = try glfw.createWindow(600, 600, "Hello window", null);
+    // change current working directory to where the executable is located.
+    {
+        var buffer: [1024]u8 = undefined;
+        const path = std.fs.selfExeDirPath(buffer[0..]) catch ".";
+        std.debug.print("{s}", .{path});
+        std.posix.chdir(path) catch {};
+    }
+
+    zglfw.windowHint(.client_api, .no_api);
+
+    const window = try zglfw.createWindow(800, 500, "Hello window", null);
     defer window.destroy();
+    window.setSizeLimits(400, 400, -1, -1);
+
+    var gpa_state = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa_state.deinit();
+    const gpa = gpa_state.allocator();
+
+    const gctx = try zgpu.GraphicsContext.create(
+        gpa,
+        .{
+            .window = window,
+            .fn_getTime = @ptrCast(&zglfw.getTime),
+            .fn_getFramebufferSize = @ptrCast(&zglfw.Window.getFramebufferSize),
+            .fn_getWin32Window = @ptrCast(&zglfw.getWin32Window),
+            .fn_getX11Display = @ptrCast(&zglfw.getX11Display),
+            .fn_getX11Window = @ptrCast(&zglfw.getX11Window),
+            .fn_getWaylandDisplay = @ptrCast(&zglfw.getWaylandDisplay),
+            .fn_getWaylandSurface = @ptrCast(&zglfw.getWaylandWindow),
+            .fn_getCocoaWindow = @ptrCast(&zglfw.getCocoaWindow),
+        },
+        .{},
+    );
+    defer gctx.destroy(gpa);
+
+    const scale_factor = scale_factor: {
+        const scale = window.getContentScale();
+        break :scale_factor @max(scale[0], scale[1]);
+    };
+
+    zgui.init(gpa);
+    defer zgui.deinit();
+
+    _ = zgui.io.addFontFromFile(
+        content_dir ++ "Roboto-Medium.ttf",
+        std.math.floor(16.0 * scale_factor),
+    );
+
+    // WE ARE BREAKING ON THIS INIT CALL
+    // https://github.com/zig-gamedev/zig-gamedev/blob/main/samples/minimal_zgpu_zgui/src/minimal_zgpu_zgui.zig
+    zgui.backend.init(
+        window,
+        gctx.device,
+        @intFromEnum(zgpu.GraphicsContext.swapchain_format),
+        @intFromEnum(wgpu.TextureFormat.undef),
+    );
+    defer zgui.backend.deinit();
 
     // setup graphics context
-    glfw.makeContextCurrent(window);
+    zglfw.makeContextCurrent(window);
 
     while (!window.shouldClose()) {
-        glfw.pollEvents();
+        zglfw.pollEvents();
         // render things
         window.swapBuffers();
     }
-}
-
-test "simple test" {
-    var list = std.ArrayList(i32).init(std.testing.allocator);
-    defer list.deinit(); // Try commenting this out and see if zig detects the memory leak!
-    try list.append(42);
-    try std.testing.expectEqual(@as(i32, 42), list.pop());
-}
-
-test "fuzz example" {
-    const Context = struct {
-        fn testOne(context: @This(), input: []const u8) anyerror!void {
-            _ = context;
-            // Try passing `--fuzz` to `zig build test` and see if it manages to fail this test case!
-            try std.testing.expect(!std.mem.eql(u8, "canyoufindme", input));
-        }
-    };
-    try std.testing.fuzz(Context{}, Context.testOne, .{});
 }
