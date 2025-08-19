@@ -24,6 +24,7 @@ pub fn build(b: *std.Build) void {
     const zgui = b.dependency("zgui", .{
         .shared = false,
         .with_implot = false,
+        .backend = .glfw_wgpu,
     });
     exe.root_module.addImport("zgui", zgui.module("root"));
     exe.linkLibrary(zgui.artifact("imgui"));

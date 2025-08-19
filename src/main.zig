@@ -1,5 +1,4 @@
 const std = @import("std");
-
 const rogue = @import("rogue");
 const zglfw = @import("zglfw");
 const zgpu = @import("zgpu");
@@ -59,7 +58,6 @@ pub fn main() !void {
         std.math.floor(16.0 * scale_factor),
     );
 
-    // WE ARE BREAKING ON THIS INIT CALL
     // https://github.com/zig-gamedev/zig-gamedev/blob/main/samples/minimal_zgpu_zgui/src/minimal_zgpu_zgui.zig
     zgui.backend.init(
         window,
@@ -69,12 +67,44 @@ pub fn main() !void {
     );
     defer zgui.backend.deinit();
 
-    // setup graphics context
-    zglfw.makeContextCurrent(window);
+    zgui.getStyle().scaleAllSizes(scale_factor);
 
-    while (!window.shouldClose()) {
+    while (!window.shouldClose() and window.getKey(.escape) != .press) {
         zglfw.pollEvents();
         // render things
-        window.swapBuffers();
+        zgui.backend.newFrame(
+            gctx.swapchain_descriptor.width,
+            gctx.swapchain_descriptor.height,
+        );
+        zgui.setNextWindowPos(.{ .x = 20.0, .y = 20.0, .cond = .first_use_ever });
+        zgui.setNextWindowSize(.{ .w = -1.0, .h = -1.0, .cond = .first_use_ever });
+
+        if (zgui.begin("My window", .{})) {
+            if (zgui.button("press me!", .{ .w = 200.0 })) {
+                std.debug.print("Button pressed\n", .{});
+            }
+        }
+        zgui.end();
+
+        const swapchain_texv = gctx.swapchain.getCurrentTextureView();
+        defer swapchain_texv.release();
+
+        const commands = commands: {
+            const encoder = gctx.device.createCommandEncoder(null);
+            defer encoder.release();
+
+            // GUI pass
+            {
+                const pass = zgpu.beginRenderPassSimple(encoder, .load, swapchain_texv, null, null, null);
+                defer zgpu.endReleasePass(pass);
+                zgui.backend.draw(pass);
+            }
+
+            break :commands encoder.finish(null);
+        };
+        defer commands.release();
+
+        gctx.submit(&.{commands});
+        _ = gctx.present();
     }
 }
