@@ -41,6 +41,9 @@ pub fn build(b: *std.Build) void {
     const zmath = b.dependency("zmath", .{});
     exe.root_module.addImport("zmath", zmath.module("root"));
 
+    const zstbi = b.dependency("zstbi", .{});
+    exe.root_module.addImport("zstbi", zstbi.module("root"));
+
     const exe_options = b.addOptions();
     exe.root_module.addOptions("build_options", exe_options);
     exe_options.addOption([]const u8, "assets", assets_dir);
