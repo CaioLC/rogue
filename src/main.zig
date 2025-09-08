@@ -31,31 +31,24 @@ const shader_source =
     \\}
 ;
 
-pub fn main() !void {
-    // SETUP
-    // change current working directory to where the executable is located.
-    {
-        var buffer: [1024]u8 = undefined;
-        const path = std.fs.selfExeDirPath(buffer[0..]) catch ".";
-        std.debug.print("{s}", .{path});
-        std.posix.chdir(path) catch {};
-    }
+// Application state struct
+const AppState = struct {
+    window: *zglfw.Window,
+    gctx: *zgpu.GraphicsContext,
+    pipeline: wgpu.RenderPipeline,
+};
 
-    // allocator
-    var gpa_state = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa_state.deinit();
-    const gpa = gpa_state.allocator();
-
-    // init window
+fn initWindow() !*zglfw.Window {
     try zglfw.init();
-    defer zglfw.terminate();
     zglfw.windowHint(.client_api, .no_api);
     const window = try zglfw.createWindow(800, 500, window_title, null);
     window.setSizeLimits(400, 400, -1, -1);
+    return window;
+}
 
-    // init graphical context
-    const gctx = try zgpu.GraphicsContext.create(
-        gpa,
+fn initGraphicsContext(allocator: std.mem.Allocator, window: *zglfw.Window) !*zgpu.GraphicsContext {
+    return try zgpu.GraphicsContext.create(
+        allocator,
         .{
             .window = window,
             .fn_getTime = @ptrCast(&zglfw.getTime),
@@ -69,8 +62,9 @@ pub fn main() !void {
         },
         .{},
     );
-    defer gctx.destroy(gpa);
+}
 
+fn createRenderPipeline(gctx: *zgpu.GraphicsContext) !wgpu.RenderPipeline {
     const shader_code_desc = wgpu.ShaderModuleWGSLDescriptor{
         .chain = .{
             .next = null,
@@ -81,6 +75,8 @@ pub fn main() !void {
     const shader_module = gctx.device.createShaderModule(
         .{ .next_in_chain = &shader_code_desc.chain },
     );
+    defer shader_module.release();
+
     const color_blend = wgpu.BlendState{
         .color = .{
             .operation = wgpu.BlendOperation.add,
@@ -135,11 +131,51 @@ pub fn main() !void {
         .layout = null,
     };
 
-    var pipeline: wgpu.RenderPipeline = gctx.device.createRenderPipeline(pipeline_desc);
-    shader_module.release();
-    defer pipeline.release();
+    return gctx.device.createRenderPipeline(pipeline_desc);
+}
+
+fn initApp(allocator: std.mem.Allocator) !AppState {
+    // change current working directory to where the executable is located.
+    {
+        var buffer: [1024]u8 = undefined;
+        const path = std.fs.selfExeDirPath(buffer[0..]) catch ".";
+        std.debug.print("{s}", .{path});
+        std.posix.chdir(path) catch {};
+    }
+
+    const window = try initWindow();
+    const gctx = try initGraphicsContext(allocator, window);
+    const pipeline = try createRenderPipeline(gctx);
+
+    return AppState{
+        .window = window,
+        .gctx = gctx,
+        .pipeline = pipeline,
+    };
+}
+
+// Cleanup
+fn deinitApp(app: *AppState, allocator: std.mem.Allocator) void {
+    app.pipeline.release();
+    app.gctx.destroy(allocator);
+    zglfw.terminate();
+}
+
+pub fn main() !void {
+    // SETUP
+    // allocator
+    var gpa_state = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa_state.deinit();
+    const gpa = gpa_state.allocator();
+
+    // state
+    var app_state = try initApp(gpa);
+    defer deinitApp(&app_state, gpa);
 
     // UPDATE
+    const window = app_state.window;
+    const gctx = app_state.gctx;
+    const pipeline = app_state.pipeline;
     while (!window.shouldClose() and window.getKey(.escape) != .press) {
         zglfw.pollEvents();
         //
