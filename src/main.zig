@@ -17,7 +17,7 @@ const shader_source =
     \\    var p = vec2f(0.0, 0.0);
     \\    if (in_vertex_index == 0u) {
     \\      p = vec2f(-0.5, -0.5);
-    \\    } else if (in_vertex_index == 0u) {
+    \\    } else if (in_vertex_index == 1u) {
     \\      p = vec2f(0.5, -0.5);
     \\    } else {
     \\      p = vec2f(0.0, 0.5);
@@ -27,7 +27,7 @@ const shader_source =
     \\
     \\@fragment
     \\fn fs_main() -> @location(0) vec4f {
-    \\  return vec4f(0.0, 0.4, 1.0, 1.0);
+    \\    return vec4f(0.0, 0.4, 1.0, 1.0);
     \\}
 ;
 
@@ -95,7 +95,7 @@ pub fn main() !void {
     };
     const color_target = &[_]wgpu.ColorTargetState{
         .{
-            .format = wgpu.TextureFormat.undef,
+            .format = gctx.swapchain_descriptor.format,
             .blend = &color_blend,
             .write_mask = wgpu.ColorWriteMask.all,
             .next_in_chain = null,
@@ -134,14 +134,15 @@ pub fn main() !void {
         },
         .layout = null,
     };
-    // shader_module.release();
 
     var pipeline: wgpu.RenderPipeline = gctx.device.createRenderPipeline(pipeline_desc);
+    shader_module.release();
     defer pipeline.release();
 
     // UPDATE
     while (!window.shouldClose() and window.getKey(.escape) != .press) {
         zglfw.pollEvents();
+        //
         // render things
         const swapchain_texv = gctx.swapchain.getCurrentTextureView();
         defer swapchain_texv.release();
