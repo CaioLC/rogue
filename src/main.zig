@@ -161,6 +161,14 @@ fn deinitApp(app: *AppState, allocator: std.mem.Allocator) void {
     zglfw.terminate();
 }
 
+fn bufferMapCallback(
+    status: wgpu.BufferMapAsyncStatus,
+    userdata: ?*anyopaque,
+) callconv(.C) void {
+    std.debug.print("{}", .{status});
+    _ = userdata;
+}
+
 pub fn main() !void {
     // SETUP
     // allocator
@@ -176,9 +184,38 @@ pub fn main() !void {
     const window = app_state.window;
     const gctx = app_state.gctx;
     const pipeline = app_state.pipeline;
+
+    var buf_desc = wgpu.BufferDescriptor{
+        .label = "Some data buffer",
+        .usage = wgpu.BufferUsage{ .copy_dst = true, .copy_src = true },
+        .size = 16,
+        .mapped_at_creation = wgpu.U32Bool.false,
+    };
+    const buffer1 = gctx.device.createBuffer(buf_desc);
+    defer buffer1.release();
+
+    buf_desc.label = "Output buffer";
+    buf_desc.usage = wgpu.BufferUsage{ .copy_dst = true, .map_read = true };
+    const buffer2 = gctx.device.createBuffer(buf_desc);
+    defer buffer2.release();
+
+    var queue = gctx.device.getQueue();
+    const data = [_]u8{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 };
+    queue.writeBuffer(buffer1, 0, u8, &data);
+
+    buffer2.mapAsync(
+        wgpu.MapMode{ .read = true },
+        0,
+        16,
+        bufferMapCallback,
+        null,
+    );
+
     while (!window.shouldClose() and window.getKey(.escape) != .press) {
         zglfw.pollEvents();
         //
+        // poll GPU
+        gctx.device.tick();
         // render things
         const swapchain_texv = gctx.swapchain.getCurrentTextureView();
         defer swapchain_texv.release();
@@ -186,6 +223,8 @@ pub fn main() !void {
         const commands = commands: {
             const encoder = gctx.device.createCommandEncoder(null);
             defer encoder.release();
+            encoder.copyBufferToBuffer(buffer1, 0, buffer2, 0, 16);
+
             const render_pass_color_attachment = &[_]wgpu.RenderPassColorAttachment{
                 .{
                     .view = swapchain_texv,
