@@ -13,16 +13,8 @@ const embedded_font_data = @embedFile("./FiraCode-Medium.ttf");
 
 const shader_source =
     \\ @vertex
-    \\fn vs_main(@builtin(vertex_index) in_vertex_index: u32) -> @builtin(position) vec4f {
-    \\    var p = vec2f(0.0, 0.0);
-    \\    if (in_vertex_index == 0u) {
-    \\      p = vec2f(-0.5, -0.5);
-    \\    } else if (in_vertex_index == 1u) {
-    \\      p = vec2f(0.5, -0.5);
-    \\    } else {
-    \\      p = vec2f(0.0, 0.5);
-    \\    }
-    \\    return vec4f(p, 0.0, 1.0);
+    \\fn vs_main(@location(0) in_vertex_position: vec2f) -> @builtin(position) vec4f {
+    \\    return vec4f(in_vertex_position, 0.0, 1.0);
     \\}
     \\
     \\@fragment
@@ -37,6 +29,8 @@ const AppState = struct {
     gctx: *zgpu.GraphicsContext,
     pipeline: wgpu.RenderPipeline,
 };
+
+const BufferCtx = struct { ready: bool, buffer: wgpu.Buffer };
 
 fn initWindow() !*zglfw.Window {
     try zglfw.init();
@@ -165,8 +159,19 @@ fn bufferMapCallback(
     status: wgpu.BufferMapAsyncStatus,
     userdata: ?*anyopaque,
 ) callconv(.C) void {
-    std.debug.print("{}", .{status});
-    _ = userdata;
+    const ctx: *BufferCtx = @alignCast(@ptrCast(userdata));
+    ctx.ready = true;
+    std.debug.print("{}\n", .{status});
+
+    const buffer_data = ctx.buffer.getConstMappedRange(u8, 0, 16).?;
+    for (buffer_data) |value| {
+        std.debug.print("{}\n", .{value});
+    }
+    ctx.buffer.unmap();
+}
+
+pub fn wgpuPollEvents(device: wgpu.Device) void {
+    device.tick();
 }
 
 pub fn main() !void {
@@ -202,14 +207,6 @@ pub fn main() !void {
     var queue = gctx.device.getQueue();
     const data = [_]u8{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 };
     queue.writeBuffer(buffer1, 0, u8, &data);
-
-    buffer2.mapAsync(
-        wgpu.MapMode{ .read = true },
-        0,
-        16,
-        bufferMapCallback,
-        null,
-    );
 
     while (!window.shouldClose() and window.getKey(.escape) != .press) {
         zglfw.pollEvents();
@@ -257,8 +254,20 @@ pub fn main() !void {
             break :commands encoder.finish(null);
         };
         defer commands.release();
-
         gctx.submit(&.{commands});
         _ = gctx.present();
+
+        var buffer_ctx = BufferCtx{ .ready = false, .buffer = buffer2 };
+        buffer2.mapAsync(
+            wgpu.MapMode{ .read = true },
+            0,
+            16,
+            bufferMapCallback,
+            &buffer_ctx,
+        );
+
+        while (!buffer_ctx.ready) {
+            wgpuPollEvents(gctx.device);
+        }
     }
 }
