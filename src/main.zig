@@ -6,6 +6,9 @@ const zglfw = @import("zglfw");
 const zgpu = @import("zgpu");
 const wgpu = zgpu.wgpu;
 const zstbi = @import("zstbi");
+const zmath = @import("zmath");
+
+const print = std.debug.print;
 
 const content_dir = @import("build_options").assets;
 const window_title = "zig-gamedev: test windows";
@@ -13,8 +16,8 @@ const embedded_font_data = @embedFile("./FiraCode-Medium.ttf");
 
 const shader_source =
     \\ @vertex
-    \\fn vs_main(@location(0) in_vertex_position: vec2f) -> @builtin(position) vec4f {
-    \\    return vec4f(in_vertex_position, 0.0, 1.0);
+    \\fn vs_main(@location(0) in_vertex_position: vec4f) -> @builtin(position) vec4f {
+    \\    return in_vertex_position;
     \\}
     \\
     \\@fragment
@@ -41,6 +44,17 @@ fn initWindow() !*zglfw.Window {
 }
 
 fn initGraphicsContext(allocator: std.mem.Allocator, window: *zglfw.Window) !*zgpu.GraphicsContext {
+    const required_limits = wgpu.RequiredLimits{
+        .limits = .{
+            .max_vertex_attributes = 1,
+            .max_vertex_buffers = 1,
+            // .max_buffer_size = 6 * 2 * @sizeOf(f32),
+            // .max_vertex_buffer_array_stride = 2 * @sizeOf(f32),
+        },
+    };
+    const options = zgpu.GraphicsContextOptions{
+        .required_limits = &required_limits,
+    };
     return try zgpu.GraphicsContext.create(
         allocator,
         .{
@@ -54,7 +68,7 @@ fn initGraphicsContext(allocator: std.mem.Allocator, window: *zglfw.Window) !*zg
             .fn_getWaylandSurface = @ptrCast(&zglfw.getWaylandWindow),
             .fn_getCocoaWindow = @ptrCast(&zglfw.getCocoaWindow),
         },
-        .{},
+        options,
     );
 }
 
@@ -100,10 +114,21 @@ fn createRenderPipeline(gctx: *zgpu.GraphicsContext) !wgpu.RenderPipeline {
         .targets = color_target,
     };
 
+    const pos_attr = wgpu.VertexAttribute{
+        .shader_location = 0,
+        .format = wgpu.VertexFormat.float32x4,
+        .offset = 0,
+    };
+    const vbuf_layout = wgpu.VertexBufferLayout{
+        .attribute_count = 1,
+        .attributes = &[_]wgpu.VertexAttribute{pos_attr},
+        .array_stride = @sizeOf(zmath.Vec),
+        .step_mode = wgpu.VertexStepMode.vertex,
+    };
     const pipeline_desc = wgpu.RenderPipelineDescriptor{
         .vertex = .{
-            .buffer_count = 0,
-            .buffers = null,
+            .buffer_count = 1,
+            .buffers = &[_]wgpu.VertexBufferLayout{vbuf_layout},
             .module = shader_module,
             .entry_point = "vs_main",
             .constant_count = 0,
@@ -190,23 +215,31 @@ pub fn main() !void {
     const gctx = app_state.gctx;
     const pipeline = app_state.pipeline;
 
-    var buf_desc = wgpu.BufferDescriptor{
-        .label = "Some data buffer",
-        .usage = wgpu.BufferUsage{ .copy_dst = true, .copy_src = true },
-        .size = 16,
+    // var supported_limits = wgpu.SupportedLimits{};
+    // const adapter = gctx.device.getAdapter();
+    // _ = adapter.getLimits(&supported_limits);
+    // print("Adapter: {}\n", .{supported_limits.limits});
+    //
+    // _ = gctx.device.getLimits(&supported_limits);
+    // print("Device: {}\n", .{supported_limits.limits});
+
+    const vertex_data: [3]zmath.Vec = .{
+        zmath.Vec{ -0.5, -0.5, 0.0, 1.0 },
+        zmath.Vec{ 0.5, -0.5, 0.0, 1.0 },
+        zmath.Vec{ 0.0, 0.5, 0.0, 1.0 },
+    };
+    const vertex_count = vertex_data.len;
+    const buf_desc = wgpu.BufferDescriptor{
+        .label = "Vertex Buffer",
+        .usage = wgpu.BufferUsage{ .copy_src = true, .copy_dst = true, .vertex = true },
+        .size = vertex_data.len * @sizeOf(zmath.Vec),
         .mapped_at_creation = wgpu.U32Bool.false,
     };
     const buffer1 = gctx.device.createBuffer(buf_desc);
     defer buffer1.release();
 
-    buf_desc.label = "Output buffer";
-    buf_desc.usage = wgpu.BufferUsage{ .copy_dst = true, .map_read = true };
-    const buffer2 = gctx.device.createBuffer(buf_desc);
-    defer buffer2.release();
-
     var queue = gctx.device.getQueue();
-    const data = [_]u8{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 };
-    queue.writeBuffer(buffer1, 0, u8, &data);
+    queue.writeBuffer(buffer1, 0, zmath.Vec, vertex_data[0..]);
 
     while (!window.shouldClose() and window.getKey(.escape) != .press) {
         zglfw.pollEvents();
@@ -220,7 +253,6 @@ pub fn main() !void {
         const commands = commands: {
             const encoder = gctx.device.createCommandEncoder(null);
             defer encoder.release();
-            encoder.copyBufferToBuffer(buffer1, 0, buffer2, 0, 16);
 
             const render_pass_color_attachment = &[_]wgpu.RenderPassColorAttachment{
                 .{
@@ -247,7 +279,18 @@ pub fn main() !void {
             {
                 const render_pass = encoder.beginRenderPass(render_pass_desc);
                 render_pass.setPipeline(pipeline);
-                render_pass.draw(3, 1, 0, 0);
+                render_pass.setVertexBuffer(
+                    0,
+                    buffer1,
+                    0,
+                    vertex_data.len * @sizeOf(zmath.Vec),
+                );
+                render_pass.draw(
+                    vertex_count,
+                    1,
+                    0,
+                    0,
+                );
                 defer zgpu.endReleasePass(render_pass);
             }
 
@@ -256,18 +299,5 @@ pub fn main() !void {
         defer commands.release();
         gctx.submit(&.{commands});
         _ = gctx.present();
-
-        var buffer_ctx = BufferCtx{ .ready = false, .buffer = buffer2 };
-        buffer2.mapAsync(
-            wgpu.MapMode{ .read = true },
-            0,
-            16,
-            bufferMapCallback,
-            &buffer_ctx,
-        );
-
-        while (!buffer_ctx.ready) {
-            wgpuPollEvents(gctx.device);
-        }
     }
 }
