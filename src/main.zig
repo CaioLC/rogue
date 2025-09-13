@@ -215,18 +215,15 @@ pub fn main() !void {
     const gctx = app_state.gctx;
     const pipeline = app_state.pipeline;
 
-    // var supported_limits = wgpu.SupportedLimits{};
-    // const adapter = gctx.device.getAdapter();
-    // _ = adapter.getLimits(&supported_limits);
-    // print("Adapter: {}\n", .{supported_limits.limits});
-    //
-    // _ = gctx.device.getLimits(&supported_limits);
-    // print("Device: {}\n", .{supported_limits.limits});
-
-    const vertex_data: [3]zmath.Vec = .{
+    const vertex_data: [6]zmath.Vec = .{
         zmath.Vec{ -0.5, -0.5, 0.0, 1.0 },
         zmath.Vec{ 0.5, -0.5, 0.0, 1.0 },
         zmath.Vec{ 0.0, 0.5, 0.0, 1.0 },
+
+        //
+        zmath.Vec{ -0.55, -0.5, 0.0, 1.0 },
+        zmath.Vec{ -0.05, 0.5, 0.0, 1.0 },
+        zmath.Vec{ -0.55, 0.5, 0.0, 1.0 },
     };
     const vertex_count = vertex_data.len;
     const buf_desc = wgpu.BufferDescriptor{
