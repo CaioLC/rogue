@@ -14,17 +14,7 @@ const content_dir = @import("build_options").assets;
 const window_title = "zig-gamedev: test windows";
 const embedded_font_data = @embedFile("./FiraCode-Medium.ttf");
 
-const shader_source =
-    \\ @vertex
-    \\fn vs_main(@location(0) in_vertex_position: vec4f) -> @builtin(position) vec4f {
-    \\    return in_vertex_position;
-    \\}
-    \\
-    \\@fragment
-    \\fn fs_main() -> @location(0) vec4f {
-    \\    return vec4f(0.0, 0.4, 1.0, 1.0);
-    \\}
-;
+const shader_source = @embedFile("shader.wgsl");
 
 // Application state struct
 const AppState = struct {
@@ -72,6 +62,28 @@ fn initGraphicsContext(allocator: std.mem.Allocator, window: *zglfw.Window) !*zg
     );
 }
 
+fn createVertexState(shader_module: wgpu.ShaderModule) wgpu.VertexState {
+    const pos_attr = wgpu.VertexAttribute{
+        .shader_location = 0,
+        .format = wgpu.VertexFormat.float32x4,
+        .offset = 0,
+    };
+    const vbuf_layout = wgpu.VertexBufferLayout{
+        .attribute_count = 1,
+        .attributes = &[_]wgpu.VertexAttribute{pos_attr},
+        .array_stride = @sizeOf(zmath.Vec),
+        .step_mode = wgpu.VertexStepMode.vertex,
+    };
+    return .{
+        .buffer_count = 1,
+        .buffers = &[_]wgpu.VertexBufferLayout{vbuf_layout},
+        .module = shader_module,
+        .entry_point = "vs_main",
+        .constant_count = 0,
+        .constants = null,
+    };
+}
+
 fn createRenderPipeline(gctx: *zgpu.GraphicsContext) !wgpu.RenderPipeline {
     const shader_code_desc = wgpu.ShaderModuleWGSLDescriptor{
         .chain = .{
@@ -97,43 +109,24 @@ fn createRenderPipeline(gctx: *zgpu.GraphicsContext) !wgpu.RenderPipeline {
             .dst_factor = wgpu.BlendFactor.one,
         },
     };
-    const color_target = &[_]wgpu.ColorTargetState{
-        .{
-            .format = gctx.swapchain_descriptor.format,
-            .blend = &color_blend,
-            .write_mask = wgpu.ColorWriteMask.all,
-            .next_in_chain = null,
-        },
+    const color_target = wgpu.ColorTargetState{
+        .format = gctx.swapchain_descriptor.format,
+        .blend = &color_blend,
+        .write_mask = wgpu.ColorWriteMask.all,
+        .next_in_chain = null,
     };
+
     const frag_state = wgpu.FragmentState{
         .module = shader_module,
         .entry_point = "fs_main",
         .constant_count = 0,
         .constants = null,
         .target_count = 1,
-        .targets = color_target,
+        .targets = &[_]wgpu.ColorTargetState{color_target},
     };
 
-    const pos_attr = wgpu.VertexAttribute{
-        .shader_location = 0,
-        .format = wgpu.VertexFormat.float32x4,
-        .offset = 0,
-    };
-    const vbuf_layout = wgpu.VertexBufferLayout{
-        .attribute_count = 1,
-        .attributes = &[_]wgpu.VertexAttribute{pos_attr},
-        .array_stride = @sizeOf(zmath.Vec),
-        .step_mode = wgpu.VertexStepMode.vertex,
-    };
     const pipeline_desc = wgpu.RenderPipelineDescriptor{
-        .vertex = .{
-            .buffer_count = 1,
-            .buffers = &[_]wgpu.VertexBufferLayout{vbuf_layout},
-            .module = shader_module,
-            .entry_point = "vs_main",
-            .constant_count = 0,
-            .constants = null,
-        },
+        .vertex = createVertexState(shader_module),
         .primitive = .{
             .topology = wgpu.PrimitiveTopology.triangle_list,
             .strip_index_format = wgpu.IndexFormat.undef,
