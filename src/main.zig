@@ -68,15 +68,31 @@ fn createVertexState(shader_module: wgpu.ShaderModule) wgpu.VertexState {
         .format = wgpu.VertexFormat.float32x4,
         .offset = 0,
     };
-    const vbuf_layout = wgpu.VertexBufferLayout{
+    const pos_buffer_layout = wgpu.VertexBufferLayout{
         .attribute_count = 1,
         .attributes = &[_]wgpu.VertexAttribute{pos_attr},
-        .array_stride = @sizeOf(zmath.Vec),
+        .array_stride = @sizeOf(f32) * 4,
         .step_mode = wgpu.VertexStepMode.vertex,
     };
+
+    const color_attr = wgpu.VertexAttribute{
+        .shader_location = 1,
+        .format = wgpu.VertexFormat.float32x4,
+        .offset = 0,
+    };
+    const color_buffer_layout = wgpu.VertexBufferLayout{
+        .attribute_count = 1,
+        .attributes = &[_]wgpu.VertexAttribute{color_attr},
+        .array_stride = @sizeOf(f32) * 4,
+        .step_mode = wgpu.VertexStepMode.vertex,
+    };
+
     return .{
-        .buffer_count = 1,
-        .buffers = &[_]wgpu.VertexBufferLayout{vbuf_layout},
+        .buffer_count = 2,
+        .buffers = &[_]wgpu.VertexBufferLayout{
+            pos_buffer_layout,
+            color_buffer_layout,
+        },
         .module = shader_module,
         .entry_point = "vs_main",
         .constant_count = 0,
@@ -208,34 +224,52 @@ pub fn main() !void {
     const gctx = app_state.gctx;
     const pipeline = app_state.pipeline;
 
-    const vertex_data: [6]zmath.Vec = .{
-        zmath.Vec{ -0.5, -0.5, 0.0, 1.0 },
-        zmath.Vec{ 0.5, -0.5, 0.0, 1.0 },
-        zmath.Vec{ 0.0, 0.5, 0.0, 1.0 },
+    const position_data = [_]f32{
+        // pos.x, pos.y, pos.z, pos.w
+        -0.5,  -0.5, 0.0, 1.0,
+        0.5,   -0.5, 0.0, 1.0,
+        0.0,   0.5,  0.0, 1.0,
 
         //
-        zmath.Vec{ -0.55, -0.5, 0.0, 1.0 },
-        zmath.Vec{ -0.05, 0.5, 0.0, 1.0 },
-        zmath.Vec{ -0.55, 0.5, 0.0, 1.0 },
+        -0.55, -0.5, 0.0, 1.0,
+        -0.05, 0.5,  0.0, 1.0,
+        -0.55, 0.5,  0.0, 1.0,
     };
-    const vertex_count = vertex_data.len;
-    const buf_desc = wgpu.BufferDescriptor{
-        .label = "Vertex Buffer",
-        .usage = wgpu.BufferUsage{ .copy_src = true, .copy_dst = true, .vertex = true },
-        .size = vertex_data.len * @sizeOf(zmath.Vec),
+    var buf_desc = wgpu.BufferDescriptor{
+        .label = "Vertex Position Buffer",
+        .usage = wgpu.BufferUsage{ .copy_dst = true, .vertex = true },
+        .size = position_data.len * @sizeOf(f32),
         .mapped_at_creation = wgpu.U32Bool.false,
     };
-    const buffer1 = gctx.device.createBuffer(buf_desc);
-    defer buffer1.release();
+    const position_buffer = gctx.device.createBuffer(buf_desc);
+    defer position_buffer.release();
+
+    const color_data = [_]f32{
+        // r, g, b, a
+        0.5, 0.5, 0.0, 1.0,
+        0.5, 0.5, 0.0, 1.0,
+        0.5, 0.5, 0.0, 1.0,
+
+        //
+        0.7, 0.7, 0.7, 1.0,
+        0.7, 0.7, 0.7, 1.0,
+        0.7, 0.7, 0.7, 1.0,
+    };
+    buf_desc.label = "Vertex Color Buffer";
+    buf_desc.size = color_data.len * @sizeOf(f32);
+    const color_buffer = gctx.device.createBuffer(buf_desc);
+    defer color_buffer.release();
 
     var queue = gctx.device.getQueue();
-    queue.writeBuffer(buffer1, 0, zmath.Vec, vertex_data[0..]);
+    queue.writeBuffer(position_buffer, 0, f32, position_data[0..]);
+    queue.writeBuffer(color_buffer, 0, f32, color_data[0..]);
 
     while (!window.shouldClose() and window.getKey(.escape) != .press) {
         zglfw.pollEvents();
         //
         // poll GPU
-        gctx.device.tick();
+        // gctx.device.tick();
+
         // render things
         const swapchain_texv = gctx.swapchain.getCurrentTextureView();
         defer swapchain_texv.release();
@@ -271,12 +305,18 @@ pub fn main() !void {
                 render_pass.setPipeline(pipeline);
                 render_pass.setVertexBuffer(
                     0,
-                    buffer1,
+                    position_buffer,
                     0,
-                    vertex_data.len * @sizeOf(zmath.Vec),
+                    position_data.len * @sizeOf(f32),
+                );
+                render_pass.setVertexBuffer(
+                    1,
+                    color_buffer,
+                    0,
+                    color_data.len * @sizeOf(f32),
                 );
                 render_pass.draw(
-                    vertex_count,
+                    6, // TODO: dynamic based on index
                     1,
                     0,
                     0,
