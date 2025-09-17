@@ -37,9 +37,8 @@ fn initGraphicsContext(allocator: std.mem.Allocator, window: *zglfw.Window) !*zg
     const required_limits = wgpu.RequiredLimits{
         .limits = .{
             .max_vertex_attributes = 1,
-            .max_vertex_buffers = 1,
-            // .max_buffer_size = 6 * 2 * @sizeOf(f32),
-            // .max_vertex_buffer_array_stride = 2 * @sizeOf(f32),
+            .max_vertex_buffers = 2,
+            .max_inter_stage_shader_components = 3,
         },
     };
     const options = zgpu.GraphicsContextOptions{
@@ -226,14 +225,10 @@ pub fn main() !void {
 
     const position_data = [_]f32{
         // pos.x, pos.y, pos.z, pos.w
-        -0.5,  -0.5, 0.0, 1.0,
-        0.5,   -0.5, 0.0, 1.0,
-        0.0,   0.5,  0.0, 1.0,
-
-        //
-        -0.55, -0.5, 0.0, 1.0,
-        -0.05, 0.5,  0.0, 1.0,
-        -0.55, 0.5,  0.0, 1.0,
+        -0.5, -0.5, 0.0, 1.0,
+        0.5,  -0.5, 0.0, 1.0,
+        0.5,  0.5,  0.0, 1.0,
+        -0.5, 0.5,  0.0, 1.0,
     };
     var buf_desc = wgpu.BufferDescriptor{
         .label = "Vertex Position Buffer",
@@ -246,23 +241,26 @@ pub fn main() !void {
 
     const color_data = [_]f32{
         // r, g, b, a
-        0.5, 0.5, 0.0, 1.0,
-        0.5, 0.5, 0.0, 1.0,
-        0.5, 0.5, 0.0, 1.0,
-
-        //
-        0.7, 0.7, 0.7, 1.0,
-        0.7, 0.7, 0.7, 1.0,
-        0.7, 0.7, 0.7, 1.0,
+        1.0, 0.0, 0.0, 1.0,
+        0.0, 1.0, 0.0, 1.0,
+        0.0, 0.0, 1.0, 1.0,
+        1.0, 1.0, 0.0, 1.0,
     };
     buf_desc.label = "Vertex Color Buffer";
     buf_desc.size = color_data.len * @sizeOf(f32);
     const color_buffer = gctx.device.createBuffer(buf_desc);
     defer color_buffer.release();
 
+    const index_data = [_]u16{ 0, 1, 2, 0, 2, 3 };
+    const index_count = index_data.len;
+    buf_desc.size = index_data.len * @sizeOf(u16);
+    buf_desc.usage = .{ .copy_dst = true, .index = true };
+    const index_buffer = gctx.device.createBuffer(buf_desc);
+
     var queue = gctx.device.getQueue();
     queue.writeBuffer(position_buffer, 0, f32, position_data[0..]);
     queue.writeBuffer(color_buffer, 0, f32, color_data[0..]);
+    queue.writeBuffer(index_buffer, 0, u16, index_data[0..]);
 
     while (!window.shouldClose() and window.getKey(.escape) != .press) {
         zglfw.pollEvents();
@@ -286,8 +284,8 @@ pub fn main() !void {
                     .store_op = wgpu.StoreOp.store,
                     .clear_value = wgpu.Color{
                         .r = 0.9,
-                        .g = 0.1,
-                        .b = 0.2,
+                        .g = 0.9,
+                        .b = 0.9,
                         .a = 1.0,
                     },
                 },
@@ -315,9 +313,16 @@ pub fn main() !void {
                     0,
                     color_data.len * @sizeOf(f32),
                 );
-                render_pass.draw(
-                    6, // TODO: dynamic based on index
+                render_pass.setIndexBuffer(
+                    index_buffer,
+                    wgpu.IndexFormat.uint16,
+                    0,
+                    index_data.len * @sizeOf(u16),
+                );
+                render_pass.drawIndexed(
+                    index_count,
                     1,
+                    0,
                     0,
                     0,
                 );
