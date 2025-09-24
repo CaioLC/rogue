@@ -21,6 +21,9 @@ const AppState = struct {
     window: *zglfw.Window,
     gctx: *zgpu.GraphicsContext,
     pipeline: wgpu.RenderPipeline,
+    point_data: std.ArrayList(f32),
+    color_data: std.ArrayList(f32),
+    index_data: std.ArrayList(u16),
 };
 
 const BufferCtx = struct { ready: bool, buffer: wgpu.Buffer };
@@ -73,7 +76,6 @@ fn createVertexState(shader_module: wgpu.ShaderModule) wgpu.VertexState {
         .array_stride = @sizeOf(f32) * 4,
         .step_mode = wgpu.VertexStepMode.vertex,
     };
-
     const color_attr = wgpu.VertexAttribute{
         .shader_location = 1,
         .format = wgpu.VertexFormat.float32x4,
@@ -85,7 +87,6 @@ fn createVertexState(shader_module: wgpu.ShaderModule) wgpu.VertexState {
         .array_stride = @sizeOf(f32) * 4,
         .step_mode = wgpu.VertexStepMode.vertex,
     };
-
     return .{
         .buffer_count = 2,
         .buffers = &[_]wgpu.VertexBufferLayout{
@@ -174,15 +175,35 @@ fn initApp(allocator: std.mem.Allocator) !AppState {
     const gctx = try initGraphicsContext(allocator, window);
     const pipeline = try createRenderPipeline(gctx);
 
+    var point_data = std.ArrayList(f32).init(allocator);
+    errdefer point_data.deinit();
+    var color_data = std.ArrayList(f32).init(allocator);
+    errdefer color_data.deinit();
+    var index_data = std.ArrayList(u16).init(allocator);
+    errdefer index_data.deinit();
+    try rogue.loadGeometry(
+        allocator,
+        content_dir[0..content_dir.len] ++ "geometry",
+        &point_data,
+        &color_data,
+        &index_data,
+    );
+
     return AppState{
         .window = window,
         .gctx = gctx,
         .pipeline = pipeline,
+        .point_data = point_data,
+        .color_data = color_data,
+        .index_data = index_data,
     };
 }
 
 // Cleanup
 fn deinitApp(app: *AppState, allocator: std.mem.Allocator) void {
+    app.point_data.deinit();
+    app.color_data.deinit();
+    app.index_data.deinit();
     app.pipeline.release();
     app.gctx.destroy(allocator);
     zglfw.terminate();
@@ -223,44 +244,31 @@ pub fn main() !void {
     const gctx = app_state.gctx;
     const pipeline = app_state.pipeline;
 
-    const position_data = [_]f32{
-        // pos.x, pos.y, pos.z, pos.w
-        -0.5, -0.5, 0.0, 1.0,
-        0.5,  -0.5, 0.0, 1.0,
-        0.5,  0.5,  0.0, 1.0,
-        -0.5, 0.5,  0.0, 1.0,
-    };
+    // points buffer
     var buf_desc = wgpu.BufferDescriptor{
         .label = "Vertex Position Buffer",
         .usage = wgpu.BufferUsage{ .copy_dst = true, .vertex = true },
-        .size = position_data.len * @sizeOf(f32),
+        .size = app_state.point_data.items.len * @sizeOf(f32),
         .mapped_at_creation = wgpu.U32Bool.false,
     };
-    const position_buffer = gctx.device.createBuffer(buf_desc);
-    defer position_buffer.release();
+    const point_buffer = gctx.device.createBuffer(buf_desc);
 
-    const color_data = [_]f32{
-        // r, g, b, a
-        1.0, 0.0, 0.0, 1.0,
-        0.0, 1.0, 0.0, 1.0,
-        0.0, 0.0, 1.0, 1.0,
-        1.0, 1.0, 0.0, 1.0,
-    };
+    // color buffer
     buf_desc.label = "Vertex Color Buffer";
-    buf_desc.size = color_data.len * @sizeOf(f32);
+    buf_desc.size = app_state.color_data.items.len * @sizeOf(f32);
     const color_buffer = gctx.device.createBuffer(buf_desc);
-    defer color_buffer.release();
 
-    const index_data = [_]u16{ 0, 1, 2, 0, 2, 3 };
-    const index_count = index_data.len;
-    buf_desc.size = index_data.len * @sizeOf(u16);
+    // idx buffer
+    const index_count: u32 = @intCast(app_state.index_data.items.len);
+    buf_desc.label = "Index Buffer";
+    buf_desc.size = index_count * @sizeOf(u16);
     buf_desc.usage = .{ .copy_dst = true, .index = true };
     const index_buffer = gctx.device.createBuffer(buf_desc);
 
     var queue = gctx.device.getQueue();
-    queue.writeBuffer(position_buffer, 0, f32, position_data[0..]);
-    queue.writeBuffer(color_buffer, 0, f32, color_data[0..]);
-    queue.writeBuffer(index_buffer, 0, u16, index_data[0..]);
+    queue.writeBuffer(point_buffer, 0, f32, app_state.point_data.items);
+    queue.writeBuffer(color_buffer, 0, f32, app_state.color_data.items);
+    queue.writeBuffer(index_buffer, 0, u16, app_state.index_data.items);
 
     while (!window.shouldClose() and window.getKey(.escape) != .press) {
         zglfw.pollEvents();
@@ -303,21 +311,21 @@ pub fn main() !void {
                 render_pass.setPipeline(pipeline);
                 render_pass.setVertexBuffer(
                     0,
-                    position_buffer,
+                    point_buffer,
                     0,
-                    position_data.len * @sizeOf(f32),
+                    app_state.point_data.items.len * @sizeOf(f32),
                 );
                 render_pass.setVertexBuffer(
                     1,
                     color_buffer,
                     0,
-                    color_data.len * @sizeOf(f32),
+                    app_state.color_data.items.len * @sizeOf(f32),
                 );
                 render_pass.setIndexBuffer(
                     index_buffer,
                     wgpu.IndexFormat.uint16,
                     0,
-                    index_data.len * @sizeOf(u16),
+                    app_state.index_data.items.len * @sizeOf(u16),
                 );
                 render_pass.drawIndexed(
                     index_count,
