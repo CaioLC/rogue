@@ -1,7 +1,6 @@
 const std = @import("std");
 const math = std.math;
 const assert = std.debug.assert;
-const rogue = @import("rogue");
 const zglfw = @import("zglfw");
 const zgpu = @import("zgpu");
 const wgpu = zgpu.wgpu;
@@ -10,11 +9,11 @@ const zmath = @import("zmath");
 
 const print = std.debug.print;
 
+const manager = @import("./resources_manager.zig");
+
 const content_dir = @import("build_options").assets;
 const window_title = "zig-gamedev: test windows";
 const embedded_font_data = @embedFile("./FiraCode-Medium.ttf");
-
-const shader_source = @embedFile("shader.wgsl");
 
 // Application state struct
 const AppState = struct {
@@ -100,16 +99,14 @@ fn createVertexState(shader_module: wgpu.ShaderModule) wgpu.VertexState {
     };
 }
 
-fn createRenderPipeline(gctx: *zgpu.GraphicsContext) !wgpu.RenderPipeline {
-    const shader_code_desc = wgpu.ShaderModuleWGSLDescriptor{
-        .chain = .{
-            .next = null,
-            .struct_type = wgpu.StructType.shader_module_wgsl_descriptor,
-        },
-        .code = shader_source,
-    };
-    const shader_module = gctx.device.createShaderModule(
-        .{ .next_in_chain = &shader_code_desc.chain },
+fn createRenderPipeline(
+    allocator: std.mem.Allocator,
+    gctx: *zgpu.GraphicsContext,
+) !wgpu.RenderPipeline {
+    const shader_module = try manager.loadShaderModule(
+        allocator,
+        content_dir[0..content_dir.len] ++ "shader.wgsl",
+        gctx.device,
     );
     defer shader_module.release();
 
@@ -173,7 +170,7 @@ fn initApp(allocator: std.mem.Allocator) !AppState {
 
     const window = try initWindow();
     const gctx = try initGraphicsContext(allocator, window);
-    const pipeline = try createRenderPipeline(gctx);
+    const pipeline = try createRenderPipeline(allocator, gctx);
 
     var point_data = std.ArrayList(f32).init(allocator);
     errdefer point_data.deinit();
@@ -181,7 +178,7 @@ fn initApp(allocator: std.mem.Allocator) !AppState {
     errdefer color_data.deinit();
     var index_data = std.ArrayList(u16).init(allocator);
     errdefer index_data.deinit();
-    try rogue.loadGeometry(
+    try manager.loadGeometry(
         allocator,
         content_dir[0..content_dir.len] ++ "geometry",
         &point_data,
