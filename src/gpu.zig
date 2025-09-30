@@ -30,6 +30,7 @@ const Buffers = struct {
 
 pub const GlobalState = struct {
     ctx: *zgpu.GraphicsContext,
+    bind_group_layouts: [1]wgpu.BindGroupLayout,
     pipeline_layout: wgpu.PipelineLayout,
     pipeline: wgpu.RenderPipeline,
 
@@ -38,14 +39,22 @@ pub const GlobalState = struct {
         window: *zglfw.Window,
     ) !GlobalState {
         const ctx = try initGraphicsContext(allocator, window);
-        const pipeline_layout = create_pipeline_layout(ctx.device);
-        const pipeline = try createRenderPipeline(
+
+        const bind_group_layouts = [_]wgpu.BindGroupLayout{
+            utime_bind_group_layout(ctx.device),
+        };
+        const pipeline_layout = create_pipeline_layout(
+            ctx.device,
+            &bind_group_layouts,
+        );
+        const pipeline = try create_render_pipeline(
             allocator,
             ctx,
             pipeline_layout,
         );
         return .{
             .ctx = ctx,
+            .bind_group_layouts = bind_group_layouts,
             .pipeline_layout = pipeline_layout,
             .pipeline = pipeline,
         };
@@ -55,9 +64,12 @@ pub const GlobalState = struct {
         state: *GlobalState,
         allocator: std.mem.Allocator,
     ) void {
-        state.pipeline.release();
-        state.pipeline_layout.release();
-        state.ctx.destroy(allocator);
+        defer state.ctx.destroy(allocator);
+        defer state.pipeline.release();
+        defer state.pipeline_layout.release();
+        defer for (state.bind_group_layouts) |group| {
+            group.release();
+        };
     }
 };
 
@@ -89,25 +101,72 @@ fn initGraphicsContext(allocator: std.mem.Allocator, window: *zglfw.Window) !*zg
     );
 }
 
-fn create_pipeline_layout(device: wgpu.Device) wgpu.PipelineLayout {
-    const binding_entry = wgpu.BindGroupEntry{
-        .binding = 0,
-    };
-    const bind_group_layout_desc = wgpu.BindGroupLayoutDescriptor{
-        .entry_count = 1,
-        .entries = &[_]wgpu.BindGroupLayoutEntry{
-            binding_entry,
+fn create_render_pipeline(
+    allocator: std.mem.Allocator,
+    gctx: *zgpu.GraphicsContext,
+    layout: wgpu.PipelineLayout,
+) !wgpu.RenderPipeline {
+    const shader_module = try manager.loadShaderModule(
+        allocator,
+        content_dir[0..content_dir.len] ++ "shader.wgsl",
+        gctx.device,
+    );
+    defer shader_module.release();
+
+    // vertex
+    const vertex_state = create_vertex_state(shader_module);
+
+    // fragment
+    const color_blend = wgpu.BlendState{
+        .color = .{
+            .operation = wgpu.BlendOperation.add,
+            .src_factor = wgpu.BlendFactor.src_alpha,
+            .dst_factor = wgpu.BlendFactor.one_minus_src_alpha,
+        },
+        .alpha = .{
+            .operation = wgpu.BlendOperation.add,
+            .src_factor = wgpu.BlendFactor.zero,
+            .dst_factor = wgpu.BlendFactor.one,
         },
     };
-    const layout_desc = wgpu.PipelineLayoutDescriptor{
-        .bind_group_layouts = &[_]wgpu.BindGroupLayoutDescriptor{
-            bind_group_layout_desc,
-        },
+    const color_target = wgpu.ColorTargetState{
+        .format = gctx.swapchain_descriptor.format,
+        .blend = &color_blend,
+        .write_mask = wgpu.ColorWriteMask.all,
+        .next_in_chain = null,
     };
-    return device.createPipelineLayout(layout_desc);
+
+    const frag_state = wgpu.FragmentState{
+        .module = shader_module,
+        .entry_point = "fs_main",
+        .constant_count = 0,
+        .constants = null,
+        .target_count = 1,
+        .targets = &[_]wgpu.ColorTargetState{color_target},
+    };
+
+    const pipeline_desc = wgpu.RenderPipelineDescriptor{
+        .vertex = vertex_state,
+        .primitive = .{
+            .topology = wgpu.PrimitiveTopology.triangle_list,
+            .strip_index_format = wgpu.IndexFormat.undef,
+            .front_face = wgpu.FrontFace.ccw,
+            .cull_mode = wgpu.CullMode.none, // TODO: set to front, once bugs are cleared
+        },
+        .fragment = &frag_state,
+        .depth_stencil = null,
+        .multisample = .{
+            .count = 1,
+            .mask = 0xffff_ffff, // ~0u in the original
+            .alpha_to_coverage_enabled = false,
+        },
+        .layout = layout,
+    };
+
+    return gctx.device.createRenderPipeline(pipeline_desc);
 }
 
-fn createVertexState(shader_module: wgpu.ShaderModule) wgpu.VertexState {
+fn create_vertex_state(shader_module: wgpu.ShaderModule) wgpu.VertexState {
     const pos_attr = wgpu.VertexAttribute{
         .shader_location = 0,
         .format = wgpu.VertexFormat.float32x4,
@@ -143,65 +202,33 @@ fn createVertexState(shader_module: wgpu.ShaderModule) wgpu.VertexState {
     };
 }
 
-fn createRenderPipeline(
-    allocator: std.mem.Allocator,
-    gctx: *zgpu.GraphicsContext,
-    layout: wgpu.PipelineLayout,
-) !wgpu.RenderPipeline {
-    const shader_module = try manager.loadShaderModule(
-        allocator,
-        content_dir[0..content_dir.len] ++ "shader.wgsl",
-        gctx.device,
-    );
-    defer shader_module.release();
+fn create_pipeline_layout(
+    device: wgpu.Device,
+    bind_group_layouts: []const wgpu.BindGroupLayout,
+) wgpu.PipelineLayout {
+    const layout_desc = wgpu.PipelineLayoutDescriptor{
+        .bind_group_layout_count = bind_group_layouts.len,
+        .bind_group_layouts = bind_group_layouts.ptr,
+    };
+    return device.createPipelineLayout(layout_desc);
+}
 
-    const color_blend = wgpu.BlendState{
-        .color = .{
-            .operation = wgpu.BlendOperation.add,
-            .src_factor = wgpu.BlendFactor.src_alpha,
-            .dst_factor = wgpu.BlendFactor.one_minus_src_alpha,
-        },
-        .alpha = .{
-            .operation = wgpu.BlendOperation.add,
-            .src_factor = wgpu.BlendFactor.zero,
-            .dst_factor = wgpu.BlendFactor.one,
+fn utime_bind_group_layout(device: wgpu.Device) wgpu.BindGroupLayout {
+    const binding_layout = wgpu.BindGroupLayoutEntry{
+        .binding = 0,
+        .visibility = wgpu.ShaderStage{ .vertex = true },
+        .buffer = .{
+            .binding_type = wgpu.BufferBindingType.uniform,
+            .min_binding_size = 4 * @sizeOf(f32),
         },
     };
-    const color_target = wgpu.ColorTargetState{
-        .format = gctx.swapchain_descriptor.format,
-        .blend = &color_blend,
-        .write_mask = wgpu.ColorWriteMask.all,
-        .next_in_chain = null,
-    };
-
-    const frag_state = wgpu.FragmentState{
-        .module = shader_module,
-        .entry_point = "fs_main",
-        .constant_count = 0,
-        .constants = null,
-        .target_count = 1,
-        .targets = &[_]wgpu.ColorTargetState{color_target},
-    };
-
-    const pipeline_desc = wgpu.RenderPipelineDescriptor{
-        .vertex = createVertexState(shader_module),
-        .primitive = .{
-            .topology = wgpu.PrimitiveTopology.triangle_list,
-            .strip_index_format = wgpu.IndexFormat.undef,
-            .front_face = wgpu.FrontFace.ccw,
-            .cull_mode = wgpu.CullMode.none, // TODO: set to front, once bugs are cleared
+    const bind_group_layout_desc = wgpu.BindGroupLayoutDescriptor{
+        .entry_count = 1,
+        .entries = &[_]wgpu.BindGroupLayoutEntry{
+            binding_layout,
         },
-        .fragment = &frag_state,
-        .depth_stencil = null,
-        .multisample = .{
-            .count = 1,
-            .mask = 0xffff_ffff, // ~0u in the original
-            .alpha_to_coverage_enabled = false,
-        },
-        .layout = layout,
     };
-
-    return gctx.device.createRenderPipeline(pipeline_desc);
+    return device.createBindGroupLayout(bind_group_layout_desc);
 }
 
 pub fn create_buffer(
