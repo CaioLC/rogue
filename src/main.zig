@@ -89,7 +89,7 @@ pub fn main() !void {
     print("AppState initialized\n", .{});
     defer deinitApp(&app_state, gpa);
 
-    // set buffers
+    // initialize buffers
     // points buffer
     const point_buffer = gpu.create_buffer(
         app_state.gpu.ctx.device,
@@ -132,23 +132,37 @@ pub fn main() !void {
     defer uniform_buffer.release();
     print("BufState initialized\n", .{});
 
+    // initialize bind groups
+    const bindings = [_]wgpu.BindGroupEntry{
+        gpu.utime_bind_group(uniform_buffer),
+    };
+    const bind_group_desc = wgpu.BindGroupDescriptor{
+        .layout = app_state.gpu.bind_group_layouts[0],
+        .entry_count = bindings.len,
+        .entries = &bindings,
+    };
+    const bind_group = app_state.gpu.ctx.device.createBindGroup(bind_group_desc);
+    defer bind_group.release();
+
     // UPDATE
     const window = app_state.window;
     const gctx = app_state.gpu.ctx;
     const pipeline = app_state.gpu.pipeline;
 
     var queue = gctx.device.getQueue();
-    const current_time: f32 = 1.0;
     queue.writeBuffer(point_buffer, 0, f32, app_state.point_data.items);
     queue.writeBuffer(color_buffer, 0, f32, app_state.color_data.items);
     queue.writeBuffer(index_buffer, 0, u16, app_state.index_data.items);
-    queue.writeBuffer(uniform_buffer, 0, f32, &.{current_time});
     print("Write Queue initialized\n", .{});
 
     while (!window.shouldClose() and window.getKey(.escape) != .press) {
         zglfw.pollEvents();
         // poll GPU
         gctx.device.tick();
+
+        // update uniforms
+        const current_time: f32 = @floatCast(zglfw.getTime());
+        queue.writeBuffer(uniform_buffer, 0, f32, &.{current_time});
 
         // render things
         const swapchain_texv = gctx.swapchain.getCurrentTextureView();
@@ -200,6 +214,11 @@ pub fn main() !void {
                     wgpu.IndexFormat.uint16,
                     0,
                     app_state.index_data.items.len * @sizeOf(u16),
+                );
+                render_pass.setBindGroup(
+                    0,
+                    bind_group,
+                    null,
                 );
                 render_pass.drawIndexed(
                     index_count,

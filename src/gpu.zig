@@ -52,6 +52,7 @@ pub const GlobalState = struct {
             ctx,
             pipeline_layout,
         );
+
         return .{
             .ctx = ctx,
             .bind_group_layouts = bind_group_layouts,
@@ -229,6 +230,15 @@ fn utime_bind_group_layout(device: wgpu.Device) wgpu.BindGroupLayout {
         },
     };
     return device.createBindGroupLayout(bind_group_layout_desc);
+}
+
+pub fn utime_bind_group(utime_buffer: wgpu.Buffer) wgpu.BindGroupEntry {
+    return wgpu.BindGroupEntry{
+        .binding = 0,
+        .buffer = utime_buffer,
+        .offset = 0,
+        .size = 4 * @sizeOf(f32),
+    };
 }
 
 pub fn create_buffer(
