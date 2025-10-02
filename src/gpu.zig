@@ -21,13 +21,6 @@ fn bufferMapCallback(
     ctx.buffer.unmap();
 }
 
-const Buffers = struct {
-    point_buffer: wgpu.Buffer,
-    color_buffer: wgpu.Buffer,
-    index_buffer: wgpu.Buffer,
-    uniform_buffer: wgpu.Buffer,
-};
-
 pub const GlobalState = struct {
     ctx: *zgpu.GraphicsContext,
     bind_group_layouts: [1]wgpu.BindGroupLayout,
@@ -256,3 +249,123 @@ pub fn create_buffer(
     };
     return device.createBuffer(buf_desc);
 }
+
+pub const BuffersManager = struct {
+    point_data: std.ArrayList(f32),
+    color_data: std.ArrayList(f32),
+    index_data: std.ArrayList(u16),
+    point_buffer: wgpu.Buffer,
+    color_buffer: wgpu.Buffer,
+    index_buffer: wgpu.Buffer,
+    uniform_buffer: wgpu.Buffer,
+
+    pub fn init(
+        allocator: std.mem.Allocator,
+        device: wgpu.Device,
+        geo_path: []const u8,
+    ) !BuffersManager {
+        var point_data = std.ArrayList(f32).init(allocator);
+        errdefer point_data.deinit();
+        var color_data = std.ArrayList(f32).init(allocator);
+        errdefer color_data.deinit();
+        var index_data = std.ArrayList(u16).init(allocator);
+        errdefer index_data.deinit();
+
+        try manager.loadGeometry(
+            allocator,
+            geo_path,
+            &point_data,
+            &color_data,
+            &index_data,
+        );
+
+        std.debug.print("Initialize Buffers\n", .{});
+        const point_buffer = create_buffer(
+            device,
+            "Vertex Position Buffer",
+            wgpu.BufferUsage{ .copy_dst = true, .vertex = true },
+            point_data.items.len * @sizeOf(f32),
+            wgpu.U32Bool.false,
+        );
+
+        // color buffer
+        const color_buffer = create_buffer(
+            device,
+            "Vertex Color Buffer",
+            wgpu.BufferUsage{ .copy_dst = true, .vertex = true },
+            color_data.items.len * @sizeOf(f32),
+            wgpu.U32Bool.false,
+        );
+
+        // idx buffer
+        const index_buffer = create_buffer(
+            device,
+            "Index Buffer",
+            wgpu.BufferUsage{ .copy_dst = true, .index = true },
+            index_data.items.len * @sizeOf(u16),
+            wgpu.U32Bool.false,
+        );
+
+        // unifom buffer
+        const uniform_buffer = create_buffer(
+            device,
+            "Time Uniform Buffer",
+            wgpu.BufferUsage{ .copy_dst = true, .uniform = true },
+            4 * @sizeOf(f32),
+            wgpu.U32Bool.false,
+        );
+
+        return BuffersManager{
+            .point_data = point_data,
+            .color_data = color_data,
+            .index_data = index_data,
+            .point_buffer = point_buffer,
+            .color_buffer = color_buffer,
+            .index_buffer = index_buffer,
+            .uniform_buffer = uniform_buffer,
+        };
+    }
+
+    pub fn release(self: *BuffersManager) void {
+        self.point_data.deinit();
+        self.color_data.deinit();
+        self.index_data.deinit();
+        self.index_buffer.release();
+        self.color_buffer.release();
+        self.point_buffer.release();
+        self.uniform_buffer.release();
+    }
+
+    pub fn index_count(self: *BuffersManager) u32 {
+        return @intCast(self.index_data.items.len);
+    }
+
+    pub fn write_buffers(self: *BuffersManager, queue: wgpu.Queue) void {
+        queue.writeBuffer(self.point_buffer, 0, f32, self.point_data.items);
+        queue.writeBuffer(self.color_buffer, 0, f32, self.color_data.items);
+        queue.writeBuffer(self.index_buffer, 0, u16, self.index_data.items);
+    }
+};
+
+pub const Bindings = struct {
+    utime_bind_group: wgpu.BindGroup,
+
+    pub fn init(gpu_state: GlobalState, uniform_buffer: wgpu.Buffer) Bindings {
+        // initialize bind groups
+        const bindings = [_]wgpu.BindGroupEntry{
+            utime_bind_group(uniform_buffer),
+        };
+        const bind_group_desc = wgpu.BindGroupDescriptor{
+            .layout = gpu_state.bind_group_layouts[0],
+            .entry_count = bindings.len,
+            .entries = &bindings,
+        };
+        const bind_group = gpu_state.ctx.device.createBindGroup(bind_group_desc);
+        return Bindings{
+            .utime_bind_group = bind_group,
+        };
+    }
+    pub fn release(self: *Bindings) void {
+        defer self.utime_bind_group.release();
+    }
+};

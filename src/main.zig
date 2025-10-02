@@ -20,9 +20,6 @@ const embedded_font_data = @embedFile("./FiraCode-Medium.ttf");
 const AppState = struct {
     window: *zglfw.Window,
     gpu: gpu.GlobalState,
-    point_data: std.ArrayList(f32),
-    color_data: std.ArrayList(f32),
-    index_data: std.ArrayList(u16),
 };
 
 fn initWindow() !*zglfw.Window {
@@ -45,34 +42,14 @@ fn initApp(allocator: std.mem.Allocator) !AppState {
     const window = try initWindow();
     const gpu_state = try gpu.GlobalState.init(allocator, window);
 
-    var point_data = std.ArrayList(f32).init(allocator);
-    errdefer point_data.deinit();
-    var color_data = std.ArrayList(f32).init(allocator);
-    errdefer color_data.deinit();
-    var index_data = std.ArrayList(u16).init(allocator);
-    errdefer index_data.deinit();
-    try manager.loadGeometry(
-        allocator,
-        content_dir[0..content_dir.len] ++ "geometry",
-        &point_data,
-        &color_data,
-        &index_data,
-    );
-
     return AppState{
         .window = window,
         .gpu = gpu_state,
-        .point_data = point_data,
-        .color_data = color_data,
-        .index_data = index_data,
     };
 }
 
 // Cleanup
 fn deinitApp(app: *AppState, allocator: std.mem.Allocator) void {
-    app.point_data.deinit();
-    app.color_data.deinit();
-    app.index_data.deinit();
     app.gpu.release(allocator);
     zglfw.terminate();
 }
@@ -89,70 +66,27 @@ pub fn main() !void {
     print("AppState initialized\n", .{});
     defer deinitApp(&app_state, gpa);
 
-    // initialize buffers
-    // points buffer
-    const point_buffer = gpu.create_buffer(
-        app_state.gpu.ctx.device,
-        "Vertex Position Buffer",
-        wgpu.BufferUsage{ .copy_dst = true, .vertex = true },
-        app_state.point_data.items.len * @sizeOf(f32),
-        wgpu.U32Bool.false,
-    );
-    defer point_buffer.release();
-
-    // color buffer
-    const color_buffer = gpu.create_buffer(
-        app_state.gpu.ctx.device,
-        "Vertex Color Buffer",
-        wgpu.BufferUsage{ .copy_dst = true, .vertex = true },
-        app_state.color_data.items.len * @sizeOf(f32),
-        wgpu.U32Bool.false,
-    );
-    defer color_buffer.release();
-
-    // idx buffer
-    const index_count: u32 = @intCast(app_state.index_data.items.len);
-    const index_buffer = gpu.create_buffer(
-        app_state.gpu.ctx.device,
-        "Index Buffer",
-        wgpu.BufferUsage{ .copy_dst = true, .index = true },
-        app_state.index_data.items.len * @sizeOf(u16),
-        wgpu.U32Bool.false,
-    );
-    defer index_buffer.release();
-
-    // unifom buffer
-    const uniform_buffer = gpu.create_buffer(
-        app_state.gpu.ctx.device,
-        "Time Uniform Buffer",
-        wgpu.BufferUsage{ .copy_dst = true, .uniform = true },
-        4 * @sizeOf(f32),
-        wgpu.U32Bool.false,
-    );
-    defer uniform_buffer.release();
-    print("BufState initialized\n", .{});
-
-    // initialize bind groups
-    const bindings = [_]wgpu.BindGroupEntry{
-        gpu.utime_bind_group(uniform_buffer),
-    };
-    const bind_group_desc = wgpu.BindGroupDescriptor{
-        .layout = app_state.gpu.bind_group_layouts[0],
-        .entry_count = bindings.len,
-        .entries = &bindings,
-    };
-    const bind_group = app_state.gpu.ctx.device.createBindGroup(bind_group_desc);
-    defer bind_group.release();
-
     // UPDATE
     const window = app_state.window;
     const gctx = app_state.gpu.ctx;
     const pipeline = app_state.gpu.pipeline;
 
+    // initialize buffers
+    const geometry = content_dir[0..content_dir.len] ++ "geometry";
+    var buffers_manager = try gpu.BuffersManager.init(
+        gpa,
+        gctx.device,
+        geometry,
+    );
+    defer buffers_manager.release();
+
+    // initialize bind bind_groups
+    const bindings = gpu.Bindings.init(
+        app_state.gpu,
+        buffers_manager.uniform_buffer,
+    );
     var queue = gctx.device.getQueue();
-    queue.writeBuffer(point_buffer, 0, f32, app_state.point_data.items);
-    queue.writeBuffer(color_buffer, 0, f32, app_state.color_data.items);
-    queue.writeBuffer(index_buffer, 0, u16, app_state.index_data.items);
+    buffers_manager.write_buffers(queue);
     print("Write Queue initialized\n", .{});
 
     while (!window.shouldClose() and window.getKey(.escape) != .press) {
@@ -162,7 +96,7 @@ pub fn main() !void {
 
         // update uniforms
         const current_time: f32 = @floatCast(zglfw.getTime());
-        queue.writeBuffer(uniform_buffer, 0, f32, &.{current_time});
+        queue.writeBuffer(buffers_manager.uniform_buffer, 0, f32, &.{current_time});
 
         // render things
         const swapchain_texv = gctx.swapchain.getCurrentTextureView();
@@ -186,6 +120,7 @@ pub fn main() !void {
                     },
                 },
             };
+
             const render_pass_desc = wgpu.RenderPassDescriptor{
                 .color_attachment_count = 1,
                 .color_attachments = render_pass_color_attachment,
@@ -199,29 +134,29 @@ pub fn main() !void {
                 render_pass.setPipeline(pipeline);
                 render_pass.setVertexBuffer(
                     0,
-                    point_buffer,
+                    buffers_manager.point_buffer,
                     0,
-                    app_state.point_data.items.len * @sizeOf(f32),
+                    buffers_manager.point_data.items.len * @sizeOf(f32),
                 );
                 render_pass.setVertexBuffer(
                     1,
-                    color_buffer,
+                    buffers_manager.color_buffer,
                     0,
-                    app_state.color_data.items.len * @sizeOf(f32),
+                    buffers_manager.color_data.items.len * @sizeOf(f32),
                 );
                 render_pass.setIndexBuffer(
-                    index_buffer,
+                    buffers_manager.index_buffer,
                     wgpu.IndexFormat.uint16,
                     0,
-                    app_state.index_data.items.len * @sizeOf(u16),
+                    buffers_manager.index_data.items.len * @sizeOf(u16),
                 );
                 render_pass.setBindGroup(
                     0,
-                    bind_group,
+                    bindings.utime_bind_group,
                     null,
                 );
                 render_pass.drawIndexed(
-                    index_count,
+                    buffers_manager.index_count(),
                     1,
                     0,
                     0,
