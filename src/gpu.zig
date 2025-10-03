@@ -34,7 +34,7 @@ pub const GlobalState = struct {
         const ctx = try initGraphicsContext(allocator, window);
 
         const bind_group_layouts = [_]wgpu.BindGroupLayout{
-            utime_bind_group_layout(ctx.device),
+            uniforms_bind_group_layout(ctx.device),
         };
         const pipeline_layout = create_pipeline_layout(
             ctx.device,
@@ -206,34 +206,6 @@ fn create_pipeline_layout(
     };
     return device.createPipelineLayout(layout_desc);
 }
-
-fn utime_bind_group_layout(device: wgpu.Device) wgpu.BindGroupLayout {
-    const binding_layout = wgpu.BindGroupLayoutEntry{
-        .binding = 0,
-        .visibility = wgpu.ShaderStage{ .vertex = true },
-        .buffer = .{
-            .binding_type = wgpu.BufferBindingType.uniform,
-            .min_binding_size = 4 * @sizeOf(f32),
-        },
-    };
-    const bind_group_layout_desc = wgpu.BindGroupLayoutDescriptor{
-        .entry_count = 1,
-        .entries = &[_]wgpu.BindGroupLayoutEntry{
-            binding_layout,
-        },
-    };
-    return device.createBindGroupLayout(bind_group_layout_desc);
-}
-
-pub fn utime_bind_group(utime_buffer: wgpu.Buffer) wgpu.BindGroupEntry {
-    return wgpu.BindGroupEntry{
-        .binding = 0,
-        .buffer = utime_buffer,
-        .offset = 0,
-        .size = 4 * @sizeOf(f32),
-    };
-}
-
 pub fn create_buffer(
     device: wgpu.Device,
     label: ?[*:0]const u8,
@@ -311,7 +283,7 @@ pub const BuffersManager = struct {
             device,
             "Time Uniform Buffer",
             wgpu.BufferUsage{ .copy_dst = true, .uniform = true },
-            4 * @sizeOf(f32),
+            @sizeOf(Uniforms),
             wgpu.U32Bool.false,
         );
 
@@ -348,12 +320,12 @@ pub const BuffersManager = struct {
 };
 
 pub const Bindings = struct {
-    utime_bind_group: wgpu.BindGroup,
+    uniforms_bind_group: wgpu.BindGroup,
 
     pub fn init(gpu_state: GlobalState, uniform_buffer: wgpu.Buffer) Bindings {
         // initialize bind groups
         const bindings = [_]wgpu.BindGroupEntry{
-            utime_bind_group(uniform_buffer),
+            uniforms_bind_group(uniform_buffer),
         };
         const bind_group_desc = wgpu.BindGroupDescriptor{
             .layout = gpu_state.bind_group_layouts[0],
@@ -362,10 +334,43 @@ pub const Bindings = struct {
         };
         const bind_group = gpu_state.ctx.device.createBindGroup(bind_group_desc);
         return Bindings{
-            .utime_bind_group = bind_group,
+            .uniforms_bind_group = bind_group,
         };
     }
     pub fn release(self: *Bindings) void {
-        defer self.utime_bind_group.release();
+        defer self.uniforms_bind_group.release();
     }
 };
+
+pub const Uniforms = struct {
+    color: [4]f32,
+    time: f32,
+    _pad: [3]f32 = undefined,
+};
+
+fn uniforms_bind_group_layout(device: wgpu.Device) wgpu.BindGroupLayout {
+    const binding_layout = wgpu.BindGroupLayoutEntry{
+        .binding = 0,
+        .visibility = wgpu.ShaderStage{ .vertex = true, .fragment = true },
+        .buffer = .{
+            .binding_type = wgpu.BufferBindingType.uniform,
+            .min_binding_size = @sizeOf(Uniforms),
+        },
+    };
+    const bind_group_layout_desc = wgpu.BindGroupLayoutDescriptor{
+        .entry_count = 1,
+        .entries = &[_]wgpu.BindGroupLayoutEntry{
+            binding_layout,
+        },
+    };
+    return device.createBindGroupLayout(bind_group_layout_desc);
+}
+
+fn uniforms_bind_group(uniforms_buffer: wgpu.Buffer) wgpu.BindGroupEntry {
+    return wgpu.BindGroupEntry{
+        .binding = 0,
+        .buffer = uniforms_buffer,
+        .offset = 0,
+        .size = @sizeOf(Uniforms),
+    };
+}

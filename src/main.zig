@@ -80,11 +80,12 @@ pub fn main() !void {
     );
     defer buffers_manager.release();
 
-    // initialize bind bind_groups
+    // initialize bind_groups
     const bindings = gpu.Bindings.init(
         app_state.gpu,
         buffers_manager.uniform_buffer,
     );
+
     var queue = gctx.device.getQueue();
     buffers_manager.write_buffers(queue);
     print("Write Queue initialized\n", .{});
@@ -95,8 +96,16 @@ pub fn main() !void {
         gctx.device.tick();
 
         // update uniforms
-        const current_time: f32 = @floatCast(zglfw.getTime());
-        queue.writeBuffer(buffers_manager.uniform_buffer, 0, f32, &.{current_time});
+        const uniform_data = gpu.Uniforms{
+            .time = @floatCast(zglfw.getTime()),
+            .color = .{ 0.0, 1.0, 0.4, 1.0 },
+        };
+        queue.writeBuffer(
+            buffers_manager.uniform_buffer,
+            0,
+            gpu.Uniforms,
+            &.{uniform_data},
+        );
 
         // render things
         const swapchain_texv = gctx.swapchain.getCurrentTextureView();
@@ -152,7 +161,7 @@ pub fn main() !void {
                 );
                 render_pass.setBindGroup(
                     0,
-                    bindings.utime_bind_group,
+                    bindings.uniforms_bind_group,
                     null,
                 );
                 render_pass.drawIndexed(
