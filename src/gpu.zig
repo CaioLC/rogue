@@ -34,7 +34,7 @@ pub const GlobalState = struct {
         const ctx = try initGraphicsContext(allocator, window);
 
         const bind_group_layouts = [_]wgpu.BindGroupLayout{
-            uniforms_bind_group_layout(ctx.device),
+            Uniforms.bind_group_layout(ctx.device),
         };
         const pipeline_layout = create_pipeline_layout(
             ctx.device,
@@ -283,7 +283,7 @@ pub const BuffersManager = struct {
             device,
             "Time Uniform Buffer",
             wgpu.BufferUsage{ .copy_dst = true, .uniform = true },
-            @sizeOf(Uniforms),
+            try stride(@sizeOf(Uniforms), device) + @sizeOf(Uniforms),
             wgpu.U32Bool.false,
         );
 
@@ -325,7 +325,7 @@ pub const Bindings = struct {
     pub fn init(gpu_state: GlobalState, uniform_buffer: wgpu.Buffer) Bindings {
         // initialize bind groups
         const bindings = [_]wgpu.BindGroupEntry{
-            uniforms_bind_group(uniform_buffer),
+            Uniforms.bind_group(uniform_buffer),
         };
         const bind_group_desc = wgpu.BindGroupDescriptor{
             .layout = gpu_state.bind_group_layouts[0],
@@ -346,31 +346,70 @@ pub const Uniforms = struct {
     color: [4]f32,
     time: f32,
     _pad: [3]f32 = undefined,
+
+    fn bind_group_layout(device: wgpu.Device) wgpu.BindGroupLayout {
+        const binding_layout = wgpu.BindGroupLayoutEntry{
+            .binding = 0,
+            .visibility = wgpu.ShaderStage{ .vertex = true, .fragment = true },
+            .buffer = .{
+                .binding_type = wgpu.BufferBindingType.uniform,
+                .min_binding_size = @sizeOf(Uniforms),
+                .has_dynamic_offset = wgpu.U32Bool.true,
+            },
+        };
+        const bind_group_layout_desc = wgpu.BindGroupLayoutDescriptor{
+            .entry_count = 1,
+            .entries = &[_]wgpu.BindGroupLayoutEntry{
+                binding_layout,
+            },
+        };
+        return device.createBindGroupLayout(bind_group_layout_desc);
+    }
+
+    fn bind_group(uniforms_buffer: wgpu.Buffer) wgpu.BindGroupEntry {
+        return wgpu.BindGroupEntry{
+            .binding = 0,
+            .buffer = uniforms_buffer,
+            .offset = 0,
+            .size = @sizeOf(Uniforms),
+        };
+    }
 };
 
-fn uniforms_bind_group_layout(device: wgpu.Device) wgpu.BindGroupLayout {
-    const binding_layout = wgpu.BindGroupLayoutEntry{
-        .binding = 0,
-        .visibility = wgpu.ShaderStage{ .vertex = true, .fragment = true },
-        .buffer = .{
-            .binding_type = wgpu.BufferBindingType.uniform,
-            .min_binding_size = @sizeOf(Uniforms),
-        },
-    };
-    const bind_group_layout_desc = wgpu.BindGroupLayoutDescriptor{
-        .entry_count = 1,
-        .entries = &[_]wgpu.BindGroupLayoutEntry{
-            binding_layout,
-        },
-    };
-    return device.createBindGroupLayout(bind_group_layout_desc);
+pub fn stride(size: u32, device: wgpu.Device) !u32 {
+    var limits = wgpu.SupportedLimits{};
+    const success: bool = device.getLimits(&limits);
+    if (success) {
+        const min_offset = limits.limits.min_uniform_buffer_offset_alignment;
+        const multiples = size / min_offset;
+        return min_offset * (1 + multiples);
+    } else {
+        std.debug.print("Failed to get limits", .{});
+        return error.GetLimitsFailed;
+    }
 }
 
-fn uniforms_bind_group(uniforms_buffer: wgpu.Buffer) wgpu.BindGroupEntry {
-    return wgpu.BindGroupEntry{
-        .binding = 0,
-        .buffer = uniforms_buffer,
-        .offset = 0,
-        .size = @sizeOf(Uniforms),
-    };
+pub fn inspect_device(allocator: std.mem.Allocator, device: wgpu.Device) !void {
+    const feature_count = device.enumerateFeatures(null);
+    var features = try std.ArrayList(wgpu.FeatureName).initCapacity(
+        allocator,
+        feature_count,
+    );
+    defer features.deinit();
+    _ = device.enumerateFeatures(features.items.ptr);
+
+    std.debug.print("Device Features: \n", .{});
+    std.debug.print(" - count: {}: \n", .{feature_count});
+    for (features.items) |feat| {
+        std.debug.print(" - {}", .{feat});
+    }
+
+    var limits = wgpu.SupportedLimits{};
+    const success: bool = device.getLimits(&limits);
+    if (success) {
+        std.debug.print("Device Limits: \n", .{});
+        std.debug.print(" - min uniform buffer offset alignment {}\n", .{limits.limits.min_uniform_buffer_offset_alignment});
+    } else {
+        std.debug.print("Failed to get limits", .{});
+    }
 }

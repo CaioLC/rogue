@@ -96,13 +96,27 @@ pub fn main() !void {
         gctx.device.tick();
 
         // update uniforms
-        const uniform_data = gpu.Uniforms{
-            .time = @floatCast(zglfw.getTime()),
+        var uniform_data = gpu.Uniforms{
+            .time = 1.0,
+            // .time = @floatCast(zglfw.getTime()),
             .color = .{ 0.0, 1.0, 0.4, 1.0 },
         };
+        const uniform_stride = try gpu.stride(
+            @sizeOf(gpu.Uniforms),
+            gctx.device,
+        );
         queue.writeBuffer(
             buffers_manager.uniform_buffer,
             0,
+            gpu.Uniforms,
+            &.{uniform_data},
+        );
+
+        uniform_data.time = -1.0;
+        uniform_data.color = .{ 1.0, 1.0, 1.0, 0.7 };
+        queue.writeBuffer(
+            buffers_manager.uniform_buffer,
+            uniform_stride,
             gpu.Uniforms,
             &.{uniform_data},
         );
@@ -162,7 +176,19 @@ pub fn main() !void {
                 render_pass.setBindGroup(
                     0,
                     bindings.uniforms_bind_group,
-                    null,
+                    &[_]u32{0.0},
+                );
+                render_pass.drawIndexed(
+                    buffers_manager.index_count(),
+                    1,
+                    0,
+                    0,
+                    0,
+                );
+                render_pass.setBindGroup(
+                    0,
+                    bindings.uniforms_bind_group,
+                    &[_]u32{uniform_stride},
                 );
                 render_pass.drawIndexed(
                     buffers_manager.index_count(),
