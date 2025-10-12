@@ -96,9 +96,8 @@ pub fn main() !void {
         gctx.device.tick();
 
         // update uniforms
-        var uniform_data = gpu.Uniforms{
-            .time = 1.0,
-            // .time = @floatCast(zglfw.getTime()),
+        const uniform_data = gpu.Uniforms{
+            .time = @floatCast(zglfw.getTime()),
             .color = .{ 0.0, 1.0, 0.4, 1.0 },
         };
         const uniform_stride = try gpu.stride(
@@ -112,15 +111,15 @@ pub fn main() !void {
             &.{uniform_data},
         );
 
-        uniform_data.time = -1.0;
-        uniform_data.color = .{ 1.0, 1.0, 1.0, 0.7 };
-        queue.writeBuffer(
-            buffers_manager.uniform_buffer,
-            uniform_stride,
-            gpu.Uniforms,
-            &.{uniform_data},
-        );
-
+        // uniform_data.time = -1.0;
+        // uniform_data.color = .{ 1.0, 1.0, 1.0, 0.7 };
+        // queue.writeBuffer(
+        //     buffers_manager.uniform_buffer,
+        //     uniform_stride,
+        //     gpu.Uniforms,
+        //     &.{uniform_data},
+        // );
+        //
         // render things
         const swapchain_texv = gctx.swapchain.getCurrentTextureView();
         defer swapchain_texv.release();

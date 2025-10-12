@@ -16,16 +16,19 @@ struct VertexOutput {
 
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
-    let ratio = 640.0 / 480.0;
-    let time = uMyUniforms.time;
-    var offset = vec2f(-0.6875, -0.463);
-    offset += 0.3 * vec2f(cos(time), sin(time));
+    let ratio = 1882.0 / 2260.0;
+    let angle = uMyUniforms.time;
+    let alpha = cos(angle);
+    let beta = sin(angle);
 
-    let out_position = vec4(
-        in.position.x + offset.x,
-        in.position.y + offset.y,
-        in.position.zw
+    var out_position = vec4(
+        in.position.x,
+        alpha * in.position.y + beta * in.position.z,
+        // alpha * in.position.z - beta * in.position.y,
+        0.0,
+        in.position.w,
     );
+    out_position.y *= ratio;
 
     return VertexOutput(
         out_position,
