@@ -90,6 +90,42 @@ pub fn main() !void {
     buffers_manager.write_buffers(queue);
     print("Write Queue initialized\n", .{});
 
+    // initialize z-buffer
+    const window_size = app_state.window.getSize();
+    const depth_texture_format = wgpu.TextureFormat.depth24_plus;
+    const depth_texture_desc = wgpu.TextureDescriptor{
+        .dimension = wgpu.TextureDimension.tdim_2d,
+        .format = depth_texture_format,
+        .mip_level_count = 1,
+        .sample_count = 1,
+        // .size = .{ 1882, 2260, 1 },
+        .size = wgpu.Extent3D{
+            .width = @intCast(window_size[0]),
+            .height = @intCast(window_size[1]),
+            .depth_or_array_layers = 1,
+        },
+        .usage = .{ .render_attachment = true },
+        .view_format_count = 1,
+        .view_formats = &[_]wgpu.TextureFormat{
+            depth_texture_format,
+        },
+    };
+    var depth_texture = gctx.device.createTexture(depth_texture_desc);
+    defer depth_texture.release();
+    defer depth_texture.destroy();
+
+    const depth_texture_view_desc = wgpu.TextureViewDescriptor{
+        .aspect = .depth_only,
+        .base_array_layer = 0,
+        .array_layer_count = 1,
+        .base_mip_level = 0,
+        .mip_level_count = 1,
+        .dimension = .tvdim_2d,
+        .format = depth_texture_format,
+    };
+    var depth_texture_view = depth_texture.createView(depth_texture_view_desc);
+    defer depth_texture_view.release();
+
     while (!window.shouldClose() and window.getKey(.escape) != .press) {
         zglfw.pollEvents();
         // poll GPU
@@ -142,11 +178,22 @@ pub fn main() !void {
                     },
                 },
             };
+            const depth_stencil_attachment = wgpu.RenderPassDepthStencilAttachment{
+                .view = depth_texture_view,
+                .depth_clear_value = 1.0,
+                .depth_load_op = .clear,
+                .depth_store_op = .store,
+                .depth_read_only = .false,
+                .stencil_clear_value = 0,
+                // .stencil_load_op = .clear,
+                // .stencil_store_op = .store,
+                .stencil_read_only = .true,
+            };
 
             const render_pass_desc = wgpu.RenderPassDescriptor{
                 .color_attachment_count = 1,
                 .color_attachments = render_pass_color_attachment,
-                .depth_stencil_attachment = null,
+                .depth_stencil_attachment = &depth_stencil_attachment,
                 .timestamp_writes = null,
             };
 

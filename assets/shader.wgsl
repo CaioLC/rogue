@@ -25,7 +25,7 @@ fn vs_main(in: VertexInput) -> VertexOutput {
         in.position.x,
         alpha * in.position.y + beta * in.position.z,
         // alpha * in.position.z - beta * in.position.y,
-        0.0,
+        in.position.z * 0.5 + 0.5,
         in.position.w,
     );
     out_position.y *= ratio;

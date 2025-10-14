@@ -139,6 +139,14 @@ fn create_render_pipeline(
         .targets = &[_]wgpu.ColorTargetState{color_target},
     };
 
+    const depth_stencil_state = wgpu.DepthStencilState{
+        .depth_compare = wgpu.CompareFunction.less,
+        .depth_write_enabled = true,
+        .format = .depth24_plus,
+        .stencil_read_mask = 0,
+        .stencil_write_mask = 0,
+    };
+
     const pipeline_desc = wgpu.RenderPipelineDescriptor{
         .vertex = vertex_state,
         .primitive = .{
@@ -148,7 +156,7 @@ fn create_render_pipeline(
             .cull_mode = wgpu.CullMode.none, // TODO: set to front, once bugs are cleared
         },
         .fragment = &frag_state,
-        .depth_stencil = null,
+        .depth_stencil = &depth_stencil_state,
         .multisample = .{
             .count = 1,
             .mask = 0xffff_ffff, // ~0u in the original
@@ -206,6 +214,7 @@ fn create_pipeline_layout(
     };
     return device.createPipelineLayout(layout_desc);
 }
+
 pub fn create_buffer(
     device: wgpu.Device,
     label: ?[*:0]const u8,
