@@ -68,64 +68,50 @@ pub fn main() !void {
 
     // UPDATE
     const window = app_state.window;
-    const gctx = app_state.gpu.ctx;
+    const gpu_state = app_state.gpu;
+    const gctx = gpu_state.ctx;
     const pipeline = app_state.gpu.pipeline;
 
-    // initialize buffers
-    const geometry = content_dir[0..content_dir.len] ++ "geometry";
-    var buffers_manager = try gpu.BuffersManager.init(
-        gpa,
-        gctx.device,
-        geometry,
-    );
-    defer buffers_manager.release();
-
-    // initialize bind_groups
-    const bindings = gpu.Bindings.init(
-        app_state.gpu,
-        buffers_manager.uniform_buffer,
-    );
-
     var queue = gctx.device.getQueue();
-    buffers_manager.write_buffers(queue);
+    gpu_state.buffers_manager.write_buffers(queue);
     print("Write Queue initialized\n", .{});
 
-    // initialize z-buffer
-    const window_size = app_state.window.getSize();
-    const depth_texture_format = wgpu.TextureFormat.depth24_plus;
-    const depth_texture_desc = wgpu.TextureDescriptor{
-        .dimension = wgpu.TextureDimension.tdim_2d,
-        .format = depth_texture_format,
-        .mip_level_count = 1,
-        .sample_count = 1,
-        // .size = .{ 1882, 2260, 1 },
-        .size = wgpu.Extent3D{
-            .width = @intCast(window_size[0]),
-            .height = @intCast(window_size[1]),
-            .depth_or_array_layers = 1,
-        },
-        .usage = .{ .render_attachment = true },
-        .view_format_count = 1,
-        .view_formats = &[_]wgpu.TextureFormat{
-            depth_texture_format,
-        },
-    };
-    var depth_texture = gctx.device.createTexture(depth_texture_desc);
-    defer depth_texture.release();
-    defer depth_texture.destroy();
-
-    const depth_texture_view_desc = wgpu.TextureViewDescriptor{
-        .aspect = .depth_only,
-        .base_array_layer = 0,
-        .array_layer_count = 1,
-        .base_mip_level = 0,
-        .mip_level_count = 1,
-        .dimension = .tvdim_2d,
-        .format = depth_texture_format,
-    };
-    var depth_texture_view = depth_texture.createView(depth_texture_view_desc);
-    defer depth_texture_view.release();
-
+    // // initialize z-buffer
+    // const window_size = app_state.window.getSize();
+    // const depth_texture_format = wgpu.TextureFormat.depth24_plus;
+    // const depth_texture_desc = wgpu.TextureDescriptor{
+    //     .dimension = wgpu.TextureDimension.tdim_2d,
+    //     .format = depth_texture_format,
+    //     .mip_level_count = 1,
+    //     .sample_count = 1,
+    //     // .size = .{ 1882, 2260, 1 },
+    //     .size = wgpu.Extent3D{
+    //         .width = @intCast(window_size[0]),
+    //         .height = @intCast(window_size[1]),
+    //         .depth_or_array_layers = 1,
+    //     },
+    //     .usage = .{ .render_attachment = true },
+    //     .view_format_count = 1,
+    //     .view_formats = &[_]wgpu.TextureFormat{
+    //         depth_texture_format,
+    //     },
+    // };
+    // var depth_texture = gctx.device.createTexture(depth_texture_desc);
+    // defer depth_texture.release();
+    // defer depth_texture.destroy();
+    //
+    // const depth_texture_view_desc = wgpu.TextureViewDescriptor{
+    //     .aspect = .depth_only,
+    //     .base_array_layer = 0,
+    //     .array_layer_count = 1,
+    //     .base_mip_level = 0,
+    //     .mip_level_count = 1,
+    //     .dimension = .tvdim_2d,
+    //     .format = depth_texture_format,
+    // };
+    // var depth_texture_view = depth_texture.createView(depth_texture_view_desc);
+    // defer depth_texture_view.release();
+    //
     while (!window.shouldClose() and window.getKey(.escape) != .press) {
         zglfw.pollEvents();
         // poll GPU
@@ -141,7 +127,7 @@ pub fn main() !void {
             gctx.device,
         );
         queue.writeBuffer(
-            buffers_manager.uniform_buffer,
+            gpu_state.buffers_manager.uniform_buffer,
             0,
             gpu.Uniforms,
             &.{uniform_data},
@@ -178,22 +164,23 @@ pub fn main() !void {
                     },
                 },
             };
-            const depth_stencil_attachment = wgpu.RenderPassDepthStencilAttachment{
-                .view = depth_texture_view,
-                .depth_clear_value = 1.0,
-                .depth_load_op = .clear,
-                .depth_store_op = .store,
-                .depth_read_only = .false,
-                .stencil_clear_value = 0,
-                // .stencil_load_op = .clear,
-                // .stencil_store_op = .store,
-                .stencil_read_only = .true,
-            };
+            // const depth_stencil_attachment = wgpu.RenderPassDepthStencilAttachment{
+            //     .view = depth_texture_view,
+            //     .depth_clear_value = 1.0,
+            //     .depth_load_op = .clear,
+            //     .depth_store_op = .store,
+            //     .depth_read_only = .false,
+            //     .stencil_clear_value = 0,
+            //     // .stencil_load_op = .clear,
+            //     // .stencil_store_op = .store,
+            //     .stencil_read_only = .true,
+            // };
 
             const render_pass_desc = wgpu.RenderPassDescriptor{
                 .color_attachment_count = 1,
                 .color_attachments = render_pass_color_attachment,
-                .depth_stencil_attachment = &depth_stencil_attachment,
+                .depth_stencil_attachment = null,
+                // .depth_stencil_attachment = &depth_stencil_attachment,
                 .timestamp_writes = null,
             };
 
@@ -203,29 +190,29 @@ pub fn main() !void {
                 render_pass.setPipeline(pipeline);
                 render_pass.setVertexBuffer(
                     0,
-                    buffers_manager.point_buffer,
+                    gpu_state.buffers_manager.point_buffer,
                     0,
-                    buffers_manager.point_data.items.len * @sizeOf(f32),
+                    gpu_state.buffers_manager.point_data.items.len * @sizeOf(f32),
                 );
                 render_pass.setVertexBuffer(
                     1,
-                    buffers_manager.color_buffer,
+                    gpu_state.buffers_manager.color_buffer,
                     0,
-                    buffers_manager.color_data.items.len * @sizeOf(f32),
+                    gpu_state.buffers_manager.color_data.items.len * @sizeOf(f32),
                 );
                 render_pass.setIndexBuffer(
-                    buffers_manager.index_buffer,
+                    gpu_state.buffers_manager.index_buffer,
                     wgpu.IndexFormat.uint16,
                     0,
-                    buffers_manager.index_data.items.len * @sizeOf(u16),
+                    gpu_state.buffers_manager.index_data.items.len * @sizeOf(u16),
                 );
                 render_pass.setBindGroup(
                     0,
-                    bindings.uniforms_bind_group,
+                    gpu_state.bindings.uniforms_bind_group,
                     &[_]u32{0.0},
                 );
                 render_pass.drawIndexed(
-                    buffers_manager.index_count(),
+                    gpu_state.buffers_manager.index_count(),
                     1,
                     0,
                     0,
@@ -233,11 +220,11 @@ pub fn main() !void {
                 );
                 render_pass.setBindGroup(
                     0,
-                    bindings.uniforms_bind_group,
+                    gpu_state.bindings.uniforms_bind_group,
                     &[_]u32{uniform_stride},
                 );
                 render_pass.drawIndexed(
-                    buffers_manager.index_count(),
+                    gpu_state.buffers_manager.index_count(),
                     1,
                     0,
                     0,

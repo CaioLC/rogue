@@ -5,6 +5,8 @@ const wgpu = zgpu.wgpu;
 const manager = @import("./resources_manager.zig");
 const content_dir = @import("build_options").assets;
 
+const geo_path = "geometry";
+
 const BufferCtx = struct { ready: bool, buffer: wgpu.Buffer };
 fn bufferMapCallback(
     status: wgpu.BufferMapAsyncStatus,
@@ -26,6 +28,8 @@ pub const GlobalState = struct {
     bind_group_layouts: [1]wgpu.BindGroupLayout,
     pipeline_layout: wgpu.PipelineLayout,
     pipeline: wgpu.RenderPipeline,
+    buffers_manager: BuffersManager,
+    bindings: Bindings,
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -46,11 +50,26 @@ pub const GlobalState = struct {
             pipeline_layout,
         );
 
+        // initialize buffers
+        const buffers_manager = try BuffersManager.init(
+            allocator,
+            ctx.device,
+        );
+
+        // initialize bind_groups
+        const bindings = Bindings.init(
+            ctx.device,
+            bind_group_layouts,
+            buffers_manager.uniform_buffer,
+        );
+
         return .{
             .ctx = ctx,
             .bind_group_layouts = bind_group_layouts,
             .pipeline_layout = pipeline_layout,
             .pipeline = pipeline,
+            .buffers_manager = buffers_manager,
+            .bindings = bindings,
         };
     }
 
@@ -64,6 +83,7 @@ pub const GlobalState = struct {
         defer for (state.bind_group_layouts) |group| {
             group.release();
         };
+        defer state.buffers_manager.release();
     }
 };
 
@@ -243,8 +263,8 @@ pub const BuffersManager = struct {
     pub fn init(
         allocator: std.mem.Allocator,
         device: wgpu.Device,
-        geo_path: []const u8,
     ) !BuffersManager {
+        const path = content_dir[0..content_dir.len] ++ geo_path;
         var point_data = std.ArrayList(f32).init(allocator);
         errdefer point_data.deinit();
         var color_data = std.ArrayList(f32).init(allocator);
@@ -254,7 +274,7 @@ pub const BuffersManager = struct {
 
         try manager.loadGeometry(
             allocator,
-            geo_path,
+            path,
             &point_data,
             &color_data,
             &index_data,
@@ -317,11 +337,11 @@ pub const BuffersManager = struct {
         self.uniform_buffer.release();
     }
 
-    pub fn index_count(self: *BuffersManager) u32 {
+    pub fn index_count(self: *const BuffersManager) u32 {
         return @intCast(self.index_data.items.len);
     }
 
-    pub fn write_buffers(self: *BuffersManager, queue: wgpu.Queue) void {
+    pub fn write_buffers(self: *const BuffersManager, queue: wgpu.Queue) void {
         queue.writeBuffer(self.point_buffer, 0, f32, self.point_data.items);
         queue.writeBuffer(self.color_buffer, 0, f32, self.color_data.items);
         queue.writeBuffer(self.index_buffer, 0, u16, self.index_data.items);
@@ -331,17 +351,21 @@ pub const BuffersManager = struct {
 pub const Bindings = struct {
     uniforms_bind_group: wgpu.BindGroup,
 
-    pub fn init(gpu_state: GlobalState, uniform_buffer: wgpu.Buffer) Bindings {
+    pub fn init(
+        device: wgpu.Device,
+        bind_group_layouts: [1]wgpu.BindGroupLayout,
+        uniform_buffer: wgpu.Buffer,
+    ) Bindings {
         // initialize bind groups
         const bindings = [_]wgpu.BindGroupEntry{
             Uniforms.bind_group(uniform_buffer),
         };
         const bind_group_desc = wgpu.BindGroupDescriptor{
-            .layout = gpu_state.bind_group_layouts[0],
+            .layout = bind_group_layouts[0],
             .entry_count = bindings.len,
             .entries = &bindings,
         };
-        const bind_group = gpu_state.ctx.device.createBindGroup(bind_group_desc);
+        const bind_group = device.createBindGroup(bind_group_desc);
         return Bindings{
             .uniforms_bind_group = bind_group,
         };
