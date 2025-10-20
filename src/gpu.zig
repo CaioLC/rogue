@@ -8,6 +8,20 @@ const content_dir = @import("build_options").assets;
 const geo_path = "geometry";
 
 const BufferCtx = struct { ready: bool, buffer: wgpu.Buffer };
+
+pub const WindowState = struct {
+    width: u32,
+    height: u32,
+
+    pub fn from_zglfw(window: *zglfw.Window) WindowState {
+        const size = window.getSize();
+        return .{
+            .width = @intCast(size[0]),
+            .height = @intCast(size[1]),
+        };
+    }
+};
+
 fn bufferMapCallback(
     status: wgpu.BufferMapAsyncStatus,
     userdata: ?*anyopaque,
@@ -30,6 +44,9 @@ pub const GlobalState = struct {
     pipeline: wgpu.RenderPipeline,
     buffers_manager: BuffersManager,
     bindings: Bindings,
+    window_state: WindowState,
+    depth_texture: wgpu.Texture,
+    depth_texture_view: wgpu.TextureView,
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -63,6 +80,38 @@ pub const GlobalState = struct {
             buffers_manager.uniform_buffer,
         );
 
+        // initialize z-buffer
+        const window_size = WindowState.from_zglfw(window);
+        const depth_texture_format = wgpu.TextureFormat.depth24_plus;
+        const depth_texture_desc = wgpu.TextureDescriptor{
+            .dimension = wgpu.TextureDimension.tdim_2d,
+            .format = depth_texture_format,
+            .mip_level_count = 1,
+            .sample_count = 1,
+            // .size = .{ 1882, 2260, 1 },
+            .size = wgpu.Extent3D{
+                .width = window_size.width,
+                .height = window_size.height,
+                .depth_or_array_layers = 1,
+            },
+            .usage = .{ .render_attachment = true },
+            .view_format_count = 1,
+            .view_formats = &[_]wgpu.TextureFormat{
+                depth_texture_format,
+            },
+        };
+
+        var depth_texture = ctx.device.createTexture(depth_texture_desc);
+        const depth_texture_view_desc = wgpu.TextureViewDescriptor{
+            .aspect = .depth_only,
+            .base_array_layer = 0,
+            .array_layer_count = 1,
+            .base_mip_level = 0,
+            .mip_level_count = 1,
+            .dimension = .tvdim_2d,
+            .format = depth_texture_format,
+        };
+        const depth_texture_view = depth_texture.createView(depth_texture_view_desc);
         return .{
             .ctx = ctx,
             .bind_group_layouts = bind_group_layouts,
@@ -70,6 +119,9 @@ pub const GlobalState = struct {
             .pipeline = pipeline,
             .buffers_manager = buffers_manager,
             .bindings = bindings,
+            .depth_texture = depth_texture,
+            .depth_texture_view = depth_texture_view,
+            .window_state = window_size,
         };
     }
 
@@ -84,6 +136,9 @@ pub const GlobalState = struct {
             group.release();
         };
         defer state.buffers_manager.release();
+        defer state.depth_texture.release();
+        defer state.depth_texture.destroy();
+        defer state.depth_texture_view.release();
     }
 };
 
