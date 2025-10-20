@@ -22,6 +22,54 @@ pub const WindowState = struct {
     }
 };
 
+const DepthTexture = struct {
+    texture: wgpu.Texture,
+    texture_view: wgpu.TextureView,
+
+    fn init(gctx: *zgpu.GraphicsContext) DepthTexture {
+        const depth_texture_format = wgpu.TextureFormat.depth24_plus;
+        const depth_texture_desc = wgpu.TextureDescriptor{
+            .dimension = wgpu.TextureDimension.tdim_2d,
+            .format = depth_texture_format,
+            .mip_level_count = 1,
+            .sample_count = 1,
+            // .size = .{ 1882, 2260, 1 },
+            .size = wgpu.Extent3D{
+                .width = gctx.swapchain_descriptor.width,
+                .height = gctx.swapchain_descriptor.height,
+                .depth_or_array_layers = 1,
+            },
+            .usage = .{ .render_attachment = true },
+            .view_format_count = 1,
+            .view_formats = &[_]wgpu.TextureFormat{
+                depth_texture_format,
+            },
+        };
+
+        var depth_texture = gctx.device.createTexture(depth_texture_desc);
+        const depth_texture_view_desc = wgpu.TextureViewDescriptor{
+            .aspect = .depth_only,
+            .base_array_layer = 0,
+            .array_layer_count = 1,
+            .base_mip_level = 0,
+            .mip_level_count = 1,
+            .dimension = .tvdim_2d,
+            .format = depth_texture_format,
+        };
+        const depth_texture_view = depth_texture.createView(depth_texture_view_desc);
+        return .{
+            .texture = depth_texture,
+            .texture_view = depth_texture_view,
+        };
+    }
+
+    fn release(self: *DepthTexture) void {
+        self.texture_view.release();
+        self.texture.release();
+        self.texture.destroy();
+    }
+};
+
 fn bufferMapCallback(
     status: wgpu.BufferMapAsyncStatus,
     userdata: ?*anyopaque,
@@ -45,8 +93,7 @@ pub const GlobalState = struct {
     buffers_manager: BuffersManager,
     bindings: Bindings,
     window_state: WindowState,
-    depth_texture: wgpu.Texture,
-    depth_texture_view: wgpu.TextureView,
+    depth_texture: DepthTexture,
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -81,37 +128,9 @@ pub const GlobalState = struct {
         );
 
         // initialize z-buffer
-        const window_size = WindowState.from_zglfw(window);
-        const depth_texture_format = wgpu.TextureFormat.depth24_plus;
-        const depth_texture_desc = wgpu.TextureDescriptor{
-            .dimension = wgpu.TextureDimension.tdim_2d,
-            .format = depth_texture_format,
-            .mip_level_count = 1,
-            .sample_count = 1,
-            // .size = .{ 1882, 2260, 1 },
-            .size = wgpu.Extent3D{
-                .width = window_size.width,
-                .height = window_size.height,
-                .depth_or_array_layers = 1,
-            },
-            .usage = .{ .render_attachment = true },
-            .view_format_count = 1,
-            .view_formats = &[_]wgpu.TextureFormat{
-                depth_texture_format,
-            },
-        };
+        const window_state = WindowState.from_zglfw(window);
+        const depth = DepthTexture.init(ctx);
 
-        var depth_texture = ctx.device.createTexture(depth_texture_desc);
-        const depth_texture_view_desc = wgpu.TextureViewDescriptor{
-            .aspect = .depth_only,
-            .base_array_layer = 0,
-            .array_layer_count = 1,
-            .base_mip_level = 0,
-            .mip_level_count = 1,
-            .dimension = .tvdim_2d,
-            .format = depth_texture_format,
-        };
-        const depth_texture_view = depth_texture.createView(depth_texture_view_desc);
         return .{
             .ctx = ctx,
             .bind_group_layouts = bind_group_layouts,
@@ -119,9 +138,8 @@ pub const GlobalState = struct {
             .pipeline = pipeline,
             .buffers_manager = buffers_manager,
             .bindings = bindings,
-            .depth_texture = depth_texture,
-            .depth_texture_view = depth_texture_view,
-            .window_state = window_size,
+            .depth_texture = depth,
+            .window_state = window_state,
         };
     }
 
@@ -137,8 +155,12 @@ pub const GlobalState = struct {
         };
         defer state.buffers_manager.release();
         defer state.depth_texture.release();
-        defer state.depth_texture.destroy();
-        defer state.depth_texture_view.release();
+    }
+
+    pub fn update_depth_texture(self: *GlobalState, window: *zglfw.Window) void {
+        self.window_state = WindowState.from_zglfw(window);
+        self.depth_texture.release();
+        self.depth_texture = DepthTexture.init(self.ctx);
     }
 };
 

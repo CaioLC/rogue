@@ -68,7 +68,7 @@ pub fn main() !void {
 
     // UPDATE
     const window = app_state.window;
-    const gpu_state = app_state.gpu;
+    var gpu_state = app_state.gpu;
     const gctx = gpu_state.ctx;
     const pipeline = app_state.gpu.pipeline;
 
@@ -77,13 +77,6 @@ pub fn main() !void {
     print("Write Queue initialized\n", .{});
 
     while (!window.shouldClose() and window.getKey(.escape) != .press) {
-        const window_size = gpu.WindowState.from_zglfw(window);
-        if (!std.meta.eql(window_size, gpu_state.window_state)) {
-            std.log.debug("State and buffer dont match", .{});
-            // reload texture buffers
-            continue;
-        }
-
         zglfw.pollEvents();
         // poll GPU
         gctx.device.tick();
@@ -107,7 +100,6 @@ pub fn main() !void {
         // render things
         const swapchain_texv = gctx.swapchain.getCurrentTextureView();
         defer swapchain_texv.release();
-
         const commands = commands: {
             const encoder = gctx.device.createCommandEncoder(null);
             defer encoder.release();
@@ -127,7 +119,7 @@ pub fn main() !void {
                 },
             };
             const depth_stencil_attachment = wgpu.RenderPassDepthStencilAttachment{
-                .view = gpu_state.depth_texture_view,
+                .view = gpu_state.depth_texture.texture_view,
                 .depth_clear_value = 1.0,
                 .depth_load_op = .clear,
                 .depth_store_op = .store,
@@ -197,6 +189,10 @@ pub fn main() !void {
         };
         defer commands.release();
         gctx.submit(&.{commands});
-        _ = gctx.present();
+
+        const exec_type = gctx.present();
+        if (exec_type == .swap_chain_resized) {
+            gpu_state.update_depth_texture(window);
+        }
     }
 }
