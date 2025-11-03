@@ -25,7 +25,7 @@ const AppState = struct {
 fn initWindow() !*zglfw.Window {
     try zglfw.init();
     zglfw.windowHint(.client_api, .no_api);
-    const window = try zglfw.createWindow(800, 500, window_title, null);
+    const window = try zglfw.createWindow(1200, 800, window_title, null);
     window.setSizeLimits(400, 400, -1, -1);
     return window;
 }
@@ -76,16 +76,39 @@ pub fn main() !void {
     gpu_state.buffers_manager.write_buffers(queue);
     print("Write Queue initialized\n", .{});
 
+    const focal_len: f32 = 0.5;
+    const ratio = gpu_state.window_state.ratio();
+    var uniform_data = gpu.Uniforms{
+        .projection_matrix = .{
+            focal_len, 0.0, 0.0, 0.0,
+            0.0, focal_len * ratio, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0,
+        },
+        .view_matrix = .{
+            1.0, 0.0, 0.0, 0.0,
+            0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0,
+        },
+        .model_matrix = .{
+            1.0, 0.0, 0.0, 0.0,
+            0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0,
+        },
+        .time = @floatCast(zglfw.getTime()),
+        .color = .{ 0.0, 1.0, 0.4, 1.0 },
+    };
+
     while (!window.shouldClose() and window.getKey(.escape) != .press) {
         zglfw.pollEvents();
         // poll GPU
         gctx.device.tick();
 
         // update uniforms
-        const uniform_data = gpu.Uniforms{
-            .time = @floatCast(zglfw.getTime()),
-            .color = .{ 0.0, 1.0, 0.4, 1.0 },
-        };
+        uniform_data.time = @floatCast(zglfw.getTime());
+
         const uniform_stride = try gpu.stride(
             @sizeOf(gpu.Uniforms),
             gctx.device,
@@ -193,6 +216,7 @@ pub fn main() !void {
         const exec_type = gctx.present();
         if (exec_type == .swap_chain_resized) {
             gpu_state.update_depth_texture(window);
+            // TODO: update projection matrix ratio
         }
     }
 }

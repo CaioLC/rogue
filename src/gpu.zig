@@ -20,6 +20,11 @@ pub const WindowState = struct {
             .height = @intCast(size[1]),
         };
     }
+    pub fn ratio(self: WindowState) f32 {
+        const w: f32 = @floatFromInt(self.width);
+        const h: f32 = @floatFromInt(self.height);
+        return w / h;
+    }
 };
 
 const DepthTexture = struct {
@@ -101,6 +106,7 @@ pub const GlobalState = struct {
     ) !GlobalState {
         const ctx = try initGraphicsContext(allocator, window);
 
+        // Setup layout
         const bind_group_layouts = [_]wgpu.BindGroupLayout{
             Uniforms.bind_group_layout(ctx.device),
         };
@@ -453,6 +459,9 @@ pub const Bindings = struct {
 };
 
 pub const Uniforms = struct {
+    projection_matrix: [16]f32,
+    view_matrix: [16]f32,
+    model_matrix: [16]f32,
     color: [4]f32,
     time: f32,
     _pad: [3]f32 = undefined,
@@ -468,6 +477,7 @@ pub const Uniforms = struct {
             },
         };
         const bind_group_layout_desc = wgpu.BindGroupLayoutDescriptor{
+            .label = "uniforms bind group layout",
             .entry_count = 1,
             .entries = &[_]wgpu.BindGroupLayoutEntry{
                 binding_layout,
