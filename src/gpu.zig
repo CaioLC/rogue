@@ -103,6 +103,7 @@ pub const GlobalState = struct {
     pub fn init(
         allocator: std.mem.Allocator,
         window: *zglfw.Window,
+        geometry: manager.Geometry,
     ) !GlobalState {
         const ctx = try initGraphicsContext(allocator, window);
 
@@ -122,8 +123,8 @@ pub const GlobalState = struct {
 
         // initialize buffers
         const buffers_manager = try BuffersManager.init(
-            allocator,
             ctx.device,
+            geometry,
         );
 
         // initialize bind_groups
@@ -335,40 +336,21 @@ pub fn create_buffer(
 }
 
 pub const BuffersManager = struct {
-    point_data: std.ArrayList(f32),
-    color_data: std.ArrayList(f32),
-    index_data: std.ArrayList(u16),
     point_buffer: wgpu.Buffer,
     color_buffer: wgpu.Buffer,
     index_buffer: wgpu.Buffer,
     uniform_buffer: wgpu.Buffer,
 
     pub fn init(
-        allocator: std.mem.Allocator,
         device: wgpu.Device,
+        geometry: manager.Geometry,
     ) !BuffersManager {
-        const path = content_dir[0..content_dir.len] ++ geo_path;
-        var point_data = std.ArrayList(f32).init(allocator);
-        errdefer point_data.deinit();
-        var color_data = std.ArrayList(f32).init(allocator);
-        errdefer color_data.deinit();
-        var index_data = std.ArrayList(u16).init(allocator);
-        errdefer index_data.deinit();
-
-        try manager.loadGeometry(
-            allocator,
-            path,
-            &point_data,
-            &color_data,
-            &index_data,
-        );
-
         std.debug.print("Initialize Buffers\n", .{});
         const point_buffer = create_buffer(
             device,
             "Vertex Position Buffer",
             wgpu.BufferUsage{ .copy_dst = true, .vertex = true },
-            point_data.items.len * @sizeOf(f32),
+            geometry.point_data.items.len * @sizeOf(f32),
             wgpu.U32Bool.false,
         );
 
@@ -377,7 +359,7 @@ pub const BuffersManager = struct {
             device,
             "Vertex Color Buffer",
             wgpu.BufferUsage{ .copy_dst = true, .vertex = true },
-            color_data.items.len * @sizeOf(f32),
+            geometry.color_data.items.len * @sizeOf(f32),
             wgpu.U32Bool.false,
         );
 
@@ -386,7 +368,7 @@ pub const BuffersManager = struct {
             device,
             "Index Buffer",
             wgpu.BufferUsage{ .copy_dst = true, .index = true },
-            index_data.items.len * @sizeOf(u16),
+            geometry.index_data.items.len * @sizeOf(u16),
             wgpu.U32Bool.false,
         );
 
@@ -400,9 +382,6 @@ pub const BuffersManager = struct {
         );
 
         return BuffersManager{
-            .point_data = point_data,
-            .color_data = color_data,
-            .index_data = index_data,
             .point_buffer = point_buffer,
             .color_buffer = color_buffer,
             .index_buffer = index_buffer,
@@ -411,23 +390,16 @@ pub const BuffersManager = struct {
     }
 
     pub fn release(self: *BuffersManager) void {
-        self.point_data.deinit();
-        self.color_data.deinit();
-        self.index_data.deinit();
         self.index_buffer.release();
         self.color_buffer.release();
         self.point_buffer.release();
         self.uniform_buffer.release();
     }
 
-    pub fn index_count(self: *const BuffersManager) u32 {
-        return @intCast(self.index_data.items.len);
-    }
-
-    pub fn write_buffers(self: *const BuffersManager, queue: wgpu.Queue) void {
-        queue.writeBuffer(self.point_buffer, 0, f32, self.point_data.items);
-        queue.writeBuffer(self.color_buffer, 0, f32, self.color_data.items);
-        queue.writeBuffer(self.index_buffer, 0, u16, self.index_data.items);
+    pub fn write_buffers(self: *const BuffersManager, queue: wgpu.Queue, geo: manager.Geometry) void {
+        queue.writeBuffer(self.point_buffer, 0, f32, geo.point_data.items);
+        queue.writeBuffer(self.color_buffer, 0, f32, geo.color_data.items);
+        queue.writeBuffer(self.index_buffer, 0, u16, geo.index_data.items);
     }
 };
 

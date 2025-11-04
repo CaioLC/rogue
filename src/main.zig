@@ -19,7 +19,34 @@ const embedded_font_data = @embedFile("./FiraCode-Medium.ttf");
 // Application state struct
 const AppState = struct {
     window: *zglfw.Window,
+    resources: manager.Resources,
     gpu: gpu.GlobalState,
+
+    fn init(allocator: std.mem.Allocator) !AppState {
+        // change current working directory to where the executable is located.
+        {
+            var buffer: [1024]u8 = undefined;
+            const path = std.fs.selfExeDirPath(buffer[0..]) catch ".";
+            std.debug.print("{s}", .{path});
+            std.posix.chdir(path) catch {};
+        }
+
+        const window = try initWindow();
+        const resources = try manager.Resources.load(allocator, content_dir);
+        const gpu_state = try gpu.GlobalState.init(allocator, window, resources.geometry);
+        return AppState{
+            .window = window,
+            .resources = resources,
+            .gpu = gpu_state,
+        };
+    }
+
+    // Cleanup
+    fn deinit(self: *AppState, allocator: std.mem.Allocator) void {
+        self.gpu.release(allocator);
+        self.resources.deinit();
+        zglfw.terminate();
+    }
 };
 
 fn initWindow() !*zglfw.Window {
@@ -30,30 +57,6 @@ fn initWindow() !*zglfw.Window {
     return window;
 }
 
-fn initApp(allocator: std.mem.Allocator) !AppState {
-    // change current working directory to where the executable is located.
-    {
-        var buffer: [1024]u8 = undefined;
-        const path = std.fs.selfExeDirPath(buffer[0..]) catch ".";
-        std.debug.print("{s}", .{path});
-        std.posix.chdir(path) catch {};
-    }
-
-    const window = try initWindow();
-    const gpu_state = try gpu.GlobalState.init(allocator, window);
-
-    return AppState{
-        .window = window,
-        .gpu = gpu_state,
-    };
-}
-
-// Cleanup
-fn deinitApp(app: *AppState, allocator: std.mem.Allocator) void {
-    app.gpu.release(allocator);
-    zglfw.terminate();
-}
-
 pub fn main() !void {
     // SETUP
     // allocator
@@ -62,9 +65,9 @@ pub fn main() !void {
     const gpa = gpa_state.allocator();
 
     // state
-    var app_state = try initApp(gpa);
+    var app_state = try AppState.init(gpa);
     print("AppState initialized\n", .{});
-    defer deinitApp(&app_state, gpa);
+    defer app_state.deinit(gpa);
 
     // UPDATE
     const window = app_state.window;
@@ -73,7 +76,7 @@ pub fn main() !void {
     const pipeline = app_state.gpu.pipeline;
 
     var queue = gctx.device.getQueue();
-    gpu_state.buffers_manager.write_buffers(queue);
+    gpu_state.buffers_manager.write_buffers(queue, app_state.resources.geometry);
     print("Write Queue initialized\n", .{});
 
     const focal_len: f32 = 0.5;
@@ -167,19 +170,19 @@ pub fn main() !void {
                     0,
                     gpu_state.buffers_manager.point_buffer,
                     0,
-                    gpu_state.buffers_manager.point_data.items.len * @sizeOf(f32),
+                    app_state.resources.geometry.point_data.items.len * @sizeOf(f32),
                 );
                 render_pass.setVertexBuffer(
                     1,
                     gpu_state.buffers_manager.color_buffer,
                     0,
-                    gpu_state.buffers_manager.color_data.items.len * @sizeOf(f32),
+                    app_state.resources.geometry.color_data.items.len * @sizeOf(f32),
                 );
                 render_pass.setIndexBuffer(
                     gpu_state.buffers_manager.index_buffer,
                     wgpu.IndexFormat.uint16,
                     0,
-                    gpu_state.buffers_manager.index_data.items.len * @sizeOf(u16),
+                    app_state.resources.geometry.index_data.items.len * @sizeOf(u16),
                 );
                 render_pass.setBindGroup(
                     0,
@@ -187,7 +190,7 @@ pub fn main() !void {
                     &[_]u32{0.0},
                 );
                 render_pass.drawIndexed(
-                    gpu_state.buffers_manager.index_count(),
+                    @intCast(app_state.resources.geometry.index_data.items.len),
                     1,
                     0,
                     0,
@@ -199,7 +202,7 @@ pub fn main() !void {
                     &[_]u32{uniform_stride},
                 );
                 render_pass.drawIndexed(
-                    gpu_state.buffers_manager.index_count(),
+                    @intCast(app_state.resources.geometry.index_data.items.len),
                     1,
                     0,
                     0,
