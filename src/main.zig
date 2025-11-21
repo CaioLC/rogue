@@ -57,7 +57,6 @@ const AppState = struct {
     }
 };
 
-
 pub fn main() !void {
     // SETUP
     // allocator
@@ -81,9 +80,9 @@ pub fn main() !void {
     print("Write Queue initialized\n", .{});
 
     var uniform_data = gpu.Uniforms{
-        .projection_matrix = app_state.camera.clip_view,
-        .view_matrix = app_state.camera.camera_view,
-        .model_matrix = app_state.camera.world_view,
+        .projection_matrix = app_state.camera.projection_matrix,
+        .view_matrix = app_state.camera.view_matrix,
+        .model_matrix = app_state.camera.model_matrix,
         .time = @floatCast(zglfw.getTime()),
         .color = .{ 0.0, 1.0, 0.4, 1.0 },
     };
@@ -95,6 +94,7 @@ pub fn main() !void {
 
         // update uniforms
         uniform_data.time = @floatCast(zglfw.getTime());
+        uniform_data.projection_matrix = app_state.camera.projection_matrix;
         // const uniform_stride = try gpu.stride(
         //     @sizeOf(gpu.Uniforms),
         //     gctx.device,
