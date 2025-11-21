@@ -1,6 +1,7 @@
 const std = @import("std");
 const zglfw = @import("zglfw");
 const zgpu = @import("zgpu");
+const zmath = @import("zmath");
 const wgpu = zgpu.wgpu;
 const manager = @import("./resources_manager.zig");
 const content_dir = @import("build_options").assets;
@@ -8,24 +9,6 @@ const content_dir = @import("build_options").assets;
 const geo_path = "geometry";
 
 const BufferCtx = struct { ready: bool, buffer: wgpu.Buffer };
-
-pub const WindowState = struct {
-    width: u32,
-    height: u32,
-
-    pub fn from_zglfw(window: *zglfw.Window) WindowState {
-        const size = window.getSize();
-        return .{
-            .width = @intCast(size[0]),
-            .height = @intCast(size[1]),
-        };
-    }
-    pub fn ratio(self: WindowState) f32 {
-        const w: f32 = @floatFromInt(self.width);
-        const h: f32 = @floatFromInt(self.height);
-        return w / h;
-    }
-};
 
 const DepthTexture = struct {
     texture: wgpu.Texture,
@@ -97,7 +80,6 @@ pub const GlobalState = struct {
     pipeline: wgpu.RenderPipeline,
     buffers_manager: BuffersManager,
     bindings: Bindings,
-    window_state: WindowState,
     depth_texture: DepthTexture,
 
     pub fn init(
@@ -135,7 +117,6 @@ pub const GlobalState = struct {
         );
 
         // initialize z-buffer
-        const window_state = WindowState.from_zglfw(window);
         const depth = DepthTexture.init(ctx);
 
         return .{
@@ -146,7 +127,6 @@ pub const GlobalState = struct {
             .buffers_manager = buffers_manager,
             .bindings = bindings,
             .depth_texture = depth,
-            .window_state = window_state,
         };
     }
 
@@ -164,8 +144,7 @@ pub const GlobalState = struct {
         defer state.depth_texture.release();
     }
 
-    pub fn update_depth_texture(self: *GlobalState, window: *zglfw.Window) void {
-        self.window_state = WindowState.from_zglfw(window);
+    pub fn update_depth_texture(self: *GlobalState) void {
         self.depth_texture.release();
         self.depth_texture = DepthTexture.init(self.ctx);
     }
@@ -431,9 +410,9 @@ pub const Bindings = struct {
 };
 
 pub const Uniforms = struct {
-    projection_matrix: [16]f32,
-    view_matrix: [16]f32,
-    model_matrix: [16]f32,
+    projection_matrix: zmath.Mat,
+    view_matrix: zmath.Mat,
+    model_matrix: zmath.Mat,
     color: [4]f32,
     time: f32,
     _pad: [3]f32 = undefined,

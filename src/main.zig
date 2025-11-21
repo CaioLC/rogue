@@ -4,23 +4,24 @@ const assert = std.debug.assert;
 const print = std.debug.print;
 const content_dir = @import("build_options").assets;
 
-const zglfw = @import("zglfw");
 const zgpu = @import("zgpu");
+const zglfw = @import("zglfw");
 const wgpu = zgpu.wgpu;
-const zmath = @import("zmath");
 const zstbi = @import("zstbi");
 
+const window = @import("./window.zig");
 const manager = @import("./resources_manager.zig");
+const camera = @import("./camera.zig");
 const gpu = @import("./gpu.zig");
 
-const window_title = "zig-gamedev: test windows";
 const embedded_font_data = @embedFile("./FiraCode-Medium.ttf");
 
 // Application state struct
 const AppState = struct {
-    window: *zglfw.Window,
+    window: window.Window,
     resources: manager.Resources,
     gpu: gpu.GlobalState,
+    camera: camera.Camera,
 
     fn init(allocator: std.mem.Allocator) !AppState {
         // change current working directory to where the executable is located.
@@ -31,13 +32,20 @@ const AppState = struct {
             std.posix.chdir(path) catch {};
         }
 
-        const window = try initWindow();
+        const window_state = try window.Window.init();
         const resources = try manager.Resources.load(allocator, content_dir);
-        const gpu_state = try gpu.GlobalState.init(allocator, window, resources.geometry);
+        const gpu_state = try gpu.GlobalState.init(allocator, window_state.z_window, resources.geometry);
+        const cam = camera.Camera.init(
+            camera.CameraType{ .ortogonal = camera.OrtogonalCamera{ .scale = 2.0 } },
+            window_state.ratio(),
+            0.001,
+            100,
+        );
         return AppState{
-            .window = window,
+            .window = window_state,
             .resources = resources,
             .gpu = gpu_state,
+            .camera = cam,
         };
     }
 
@@ -45,17 +53,10 @@ const AppState = struct {
     fn deinit(self: *AppState, allocator: std.mem.Allocator) void {
         self.gpu.release(allocator);
         self.resources.deinit();
-        zglfw.terminate();
+        self.window.deinit();
     }
 };
 
-fn initWindow() !*zglfw.Window {
-    try zglfw.init();
-    zglfw.windowHint(.client_api, .no_api);
-    const window = try zglfw.createWindow(1200, 800, window_title, null);
-    window.setSizeLimits(400, 400, -1, -1);
-    return window;
-}
 
 pub fn main() !void {
     // SETUP
@@ -70,7 +71,7 @@ pub fn main() !void {
     defer app_state.deinit(gpa);
 
     // UPDATE
-    const window = app_state.window;
+    const z_window = app_state.window.z_window;
     var gpu_state = app_state.gpu;
     const gctx = gpu_state.ctx;
     const pipeline = app_state.gpu.pipeline;
@@ -79,43 +80,25 @@ pub fn main() !void {
     gpu_state.buffers_manager.write_buffers(queue, app_state.resources.geometry);
     print("Write Queue initialized\n", .{});
 
-    const focal_len: f32 = 0.5;
-    const ratio = gpu_state.window_state.ratio();
     var uniform_data = gpu.Uniforms{
-        .projection_matrix = .{
-            focal_len, 0.0, 0.0, 0.0,
-            0.0, focal_len * ratio, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            0.0, 0.0, 0.0, 1.0,
-        },
-        .view_matrix = .{
-            1.0, 0.0, 0.0, 0.0,
-            0.0, 1.0, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            0.0, 0.0, 0.0, 1.0,
-        },
-        .model_matrix = .{
-            1.0, 0.0, 0.0, 0.0,
-            0.0, 1.0, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            0.0, 0.0, 0.0, 1.0,
-        },
+        .projection_matrix = app_state.camera.clip_view,
+        .view_matrix = app_state.camera.camera_view,
+        .model_matrix = app_state.camera.world_view,
         .time = @floatCast(zglfw.getTime()),
         .color = .{ 0.0, 1.0, 0.4, 1.0 },
     };
 
-    while (!window.shouldClose() and window.getKey(.escape) != .press) {
+    while (!z_window.shouldClose() and z_window.getKey(.escape) != .press) {
         zglfw.pollEvents();
         // poll GPU
         gctx.device.tick();
 
         // update uniforms
         uniform_data.time = @floatCast(zglfw.getTime());
-
-        const uniform_stride = try gpu.stride(
-            @sizeOf(gpu.Uniforms),
-            gctx.device,
-        );
+        // const uniform_stride = try gpu.stride(
+        //     @sizeOf(gpu.Uniforms),
+        //     gctx.device,
+        // );
         queue.writeBuffer(
             gpu_state.buffers_manager.uniform_buffer,
             0,
@@ -196,18 +179,18 @@ pub fn main() !void {
                     0,
                     0,
                 );
-                render_pass.setBindGroup(
-                    0,
-                    gpu_state.bindings.uniforms_bind_group,
-                    &[_]u32{uniform_stride},
-                );
-                render_pass.drawIndexed(
-                    @intCast(app_state.resources.geometry.index_data.items.len),
-                    1,
-                    0,
-                    0,
-                    0,
-                );
+                // render_pass.setBindGroup(
+                //     0,
+                //     gpu_state.bindings.uniforms_bind_group,
+                //     &[_]u32{uniform_stride},
+                // );
+                // render_pass.drawIndexed(
+                //     @intCast(app_state.resources.geometry.index_data.items.len),
+                //     1,
+                //     0,
+                //     0,
+                //     0,
+                // );
                 defer zgpu.endReleasePass(render_pass);
             }
 
@@ -218,8 +201,9 @@ pub fn main() !void {
 
         const exec_type = gctx.present();
         if (exec_type == .swap_chain_resized) {
-            gpu_state.update_depth_texture(window);
-            // TODO: update projection matrix ratio
+            app_state.window.update();
+            app_state.camera.update(app_state.window.ratio());
+            gpu_state.update_depth_texture();
         }
     }
 }

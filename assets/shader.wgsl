@@ -44,63 +44,7 @@ fn makePerspectiveProjection(ratio: f32, focalLenght: f32, near: f32, far: f32) 
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
-    let ratio = 1200.0 / 800.0;
-    var offset = vec2f(0.0);
-
-    // Scale the object
-    let S = mat4x4(
-      0.3, 0.0, 0.0, 0.0,
-      0.0, 0.3, 0.0, 0.0,
-      0.0, 0.0, 0.3, 0.0,
-      0.0, 0.0, 0.0, 1.0,
-    );
-
-    // Translate the object
-    let T = transpose(mat4x4(
-      1.0, 0.0, 0.0, 0.5,
-      0.0, 1.0, 0.0, 0.0,
-      0.0, 0.0, 1.0, 0.0,
-      0.0, 0.0, 0.0, 1.0,
-    ));
-
-    // Rotate in the XY plane
-    let angle1 = uMyUniforms.time;
-    let c1 = cos(angle1);
-    let s1 = sin(angle1);
-    let R1 = transpose(mat4x4(
-       c1,  s1, 0.0, 0.0,
-      -s1,  c1, 0.0, 0.0,
-      0.0, 0.0, 1.0, 0.0,
-      0.0, 0.0, 0.0, 1.0,
-    ));
-
-    // Tilt the view point in the YZ plane
-    // by three 8th of turn (1 turn = 2pi)
-    let angle2 = 3.0 * pi / 4.0;
-    let c2 = cos(angle2);
-    let s2 = sin(angle2);
-    let R2 = transpose(mat4x4(
-      1.0, 0.0, 0.0, 0.0,
-      0.0,  c2,  s2, 0.0,
-      0.0, -s2,  c2, 0.0,
-      0.0, 0.0, 0.0, 1.0,
-    ));
-
-    var position = R2 * R1 * T * S * in.position;
-
-    // Move the view point
-    let focalPoint = vec4f(0.0, 0.0, -2.0, 0.0);
-    position = position - focalPoint;
-
-    let focalLenght = 1.5;
-   
-    // Projection
-    // let P = makeOrthographicProjection(ratio, 1.0, 0.0, 100.0);
-// fn makePerspectiveProjection(ratio: f32, focalLenght: f32, near: f32, far: f32) -> mat4x4<f32> {
-    let P = makePerspectiveProjection(ratio, focalLenght, 0.01, 100.0);
-
-    out.position = P * position;
-    out.position.w = position.z / focalLenght;
+    out.position = uMyUniforms.projectionMatrix * uMyUniforms.viewMatrix * uMyUniforms.modelMatrix * in.position;
     out.color = in.color;
     return out;
 }

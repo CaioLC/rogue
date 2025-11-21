@@ -2,7 +2,6 @@ const std = @import("std");
 const zgpu = @import("zgpu");
 const wgpu = zgpu.wgpu;
 
-
 pub const Resources = struct {
     geometry: Geometry,
 
@@ -11,9 +10,7 @@ pub const Resources = struct {
         defer allocator.free(geo_path);
 
         const geometry = try Geometry.loadCustom(allocator, geo_path);
-        return Resources {
-            .geometry = geometry
-        };
+        return Resources{ .geometry = geometry };
     }
 
     pub fn deinit(self: *Resources) void {
@@ -131,7 +128,7 @@ pub const Geometry = struct {
             _ = try index_data.addManyAsSlice(@divExact(remainder, @sizeOf(f16)));
         }
 
-        return Geometry {
+        return Geometry{
             .point_data = point_data,
             .color_data = color_data,
             .index_data = index_data,
@@ -174,5 +171,3 @@ pub fn loadShaderModule(
         .{ .next_in_chain = &shader_code_desc.chain },
     );
 }
-
-
