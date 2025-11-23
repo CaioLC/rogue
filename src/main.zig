@@ -6,6 +6,7 @@ const content_dir = @import("build_options").assets;
 
 const zgpu = @import("zgpu");
 const zmath = @import("zmath");
+const mul = zmath.mul;
 const zglfw = @import("zglfw");
 const wgpu = zgpu.wgpu;
 const zstbi = @import("zstbi");
@@ -90,13 +91,12 @@ pub fn main() !void {
     };
 
     // rotate world view
-    const S = zmath.scaling(0.4, 0.4, 0.4);
+    const S = zmath.scaling(0.6, 0.6, 0.6);
     const R1 = zmath.rotationX(-3.0 * 3.14 / 4.0);
-    const T = zmath.translation(0.0, 0.0, -1.0);
-    var M = zmath.mul(T, R1);
-    M = zmath.mul(M, S);
-    uniform_data.model_matrix = zmath.mul(uniform_data.model_matrix, M);
-    // uniform_data.view_matrix = zmath.mul(zmath.translation(0.0, 0.0, -2.0), uniform_data.view_matrix);
+    const T = zmath.translation(0.0, 0.0, -0.0);
+    const M = mul(mul(S, R1), T);
+    uniform_data.model_matrix = mul(uniform_data.model_matrix, M);
+    uniform_data.view_matrix = mul(uniform_data.view_matrix, zmath.translation(0.0, 0.0, 2.0));
     std.debug.print("UNIFORM DATA: {}", .{uniform_data});
 
     while (!z_window.shouldClose() and z_window.getKey(.escape) != .press) {
@@ -107,9 +107,9 @@ pub fn main() !void {
         // update uniforms
         uniform_data.time = @floatCast(zglfw.getTime());
         uniform_data.projection_matrix = app.camera.projection_matrix;
-        const T2 = zmath.translation(0.05, 0.0, 0.0);
+        const T2 = zmath.translation(0.1, 0.0, 0.0);
         const R2 = zmath.rotationZ(-0.05);
-        const M2 = zmath.mul(R2, T2);
+        const M2 = mul(T2, R2);
         uniform_data.model_matrix = zmath.mul(M2, uniform_data.model_matrix);
         // const uniform_stride = try gpu.stride(
         //     @sizeOf(gpu.Uniforms),
