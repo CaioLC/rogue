@@ -1,22 +1,18 @@
 const zmath = @import("zmath");
 
 pub const PerspectiveCamera = struct {
-    focal_len: f32,
+    fov: f32,
 
-    pub fn init(scale: f32) PerspectiveCamera {
-        return .{.focal_len = scale};
+    pub fn init(field_of_view: f32) PerspectiveCamera {
+        return .{ .fov = field_of_view };
+    }
+
+    pub fn update(self: *PerspectiveCamera, fov: f32) void {
+        self.fov = fov;
     }
 
     fn make_projection(self: PerspectiveCamera, ratio: f32, near: f32, far: f32) zmath.Mat {
-        const denominator = self.focal_len * (far - near);
-        const p_zz = far / denominator;
-        const p_zw = -(far * near) / denominator;
-        return zmath.matFromArr(.{
-            self.focal_len, 0.0,                    0.0,  0.0,
-            0.0,            self.focal_len * ratio, 0.0,  0.0,
-            0.0,            0.0,                    p_zz, p_zw,
-            0.0,            0.0,                    1.0,  0.0,
-        });
+        return zmath.perspectiveFovLh(self.fov, ratio, near, far);
     }
 };
 
@@ -24,15 +20,19 @@ pub const OrtogonalCamera = struct {
     scale: f32,
 
     pub fn init(scale: f32) OrtogonalCamera {
-        return .{.scale = scale};
+        return .{ .scale = scale };
+    }
+
+    pub fn update(self: *PerspectiveCamera, scale: f32) void {
+        self.scale = scale;
     }
 
     fn make_projection(self: OrtogonalCamera, ratio: f32, near: f32, far: f32) zmath.Mat {
         return zmath.matFromArr(.{
-            1.0 / self.scale, 0.0,                0.0,                0.0,
-            0.0,              ratio / self.scale, 0.0,                0.0,
-            0.0,              0.0,                1.0 / (far - near), -near / (far - near),
-            0.0,              0.0,                0.0,                1.0,
+            1.0 / self.scale, 0.0,                0.0,                  0.0,
+            0.0,              ratio / self.scale, 0.0,                  0.0,
+            0.0,              0.0,                1.0 / (far - near),   0.0,
+            0.0,              0.0,                -near / (far - near), 1.0,
         });
     }
 };
