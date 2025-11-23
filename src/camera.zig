@@ -1,18 +1,23 @@
 const zmath = @import("zmath");
 
 pub const PerspectiveCamera = struct {
-    fov: f32,
+    f_length: f32,
 
-    pub fn init(field_of_view: f32) PerspectiveCamera {
-        return .{ .fov = field_of_view };
+    pub fn init(focal_length: f32) PerspectiveCamera {
+        return .{ .f_length = focal_length };
     }
 
-    pub fn update(self: *PerspectiveCamera, fov: f32) void {
-        self.fov = fov;
+    pub fn update(self: *PerspectiveCamera, focal_length: f32) void {
+        self.f_length = focal_length;
     }
 
     fn make_projection(self: PerspectiveCamera, ratio: f32, near: f32, far: f32) zmath.Mat {
-        return zmath.perspectiveFovLh(self.fov, ratio, near, far);
+        return zmath.matFromArr(.{
+            self.f_length / ratio, 0.0,           0.0,                        0.0,
+            0.0,                   self.f_length, 0.0,                        0.0,
+            0.0,                   0.0,           far / (far - near),         1.0,
+            0.0,                   0.0,           -far * near / (far - near), 0.0,
+        });
     }
 };
 

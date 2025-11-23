@@ -37,11 +37,11 @@ const App = struct {
         const resources = try manager.Resources.load(allocator, content_dir);
         const gpu_state = try gpu.GlobalState.init(allocator, window_state.z_window, resources.geometry);
         const cam = camera.Camera.init(
-            camera.CameraType{ .ortogonal = camera.OrtogonalCamera.init(1.0) },
-            // camera.CameraType{ .perspective = camera.PerspectiveCamera.init(9.9) },
+            // camera.CameraType{ .ortogonal = camera.OrtogonalCamera.init(1.0) },
+            camera.CameraType{ .perspective = camera.PerspectiveCamera.init(0.500) },
             window_state.ratio(),
-            -100,
-            10000,
+            0.01,
+            100,
         );
         return App{
             .window = window_state,
@@ -90,11 +90,14 @@ pub fn main() !void {
     };
 
     // rotate world view
-    std.debug.print("UNIFORM DATA: {}", .{uniform_data});
-    const S = zmath.scaling(0.5, 0.5, 0.5);
+    const S = zmath.scaling(0.4, 0.4, 0.4);
     const R1 = zmath.rotationX(-3.0 * 3.14 / 4.0);
-    const M = zmath.mul(R1, S);
+    const T = zmath.translation(0.0, 0.0, -1.0);
+    var M = zmath.mul(T, R1);
+    M = zmath.mul(M, S);
     uniform_data.model_matrix = zmath.mul(uniform_data.model_matrix, M);
+    // uniform_data.view_matrix = zmath.mul(zmath.translation(0.0, 0.0, -2.0), uniform_data.view_matrix);
+    std.debug.print("UNIFORM DATA: {}", .{uniform_data});
 
     while (!z_window.shouldClose() and z_window.getKey(.escape) != .press) {
         zglfw.pollEvents();
@@ -104,9 +107,9 @@ pub fn main() !void {
         // update uniforms
         uniform_data.time = @floatCast(zglfw.getTime());
         uniform_data.projection_matrix = app.camera.projection_matrix;
-        const T = zmath.translation(0.05, 0.0, 0.0);
+        const T2 = zmath.translation(0.05, 0.0, 0.0);
         const R2 = zmath.rotationZ(-0.05);
-        const M2 = zmath.mul(R2, T);
+        const M2 = zmath.mul(R2, T2);
         uniform_data.model_matrix = zmath.mul(M2, uniform_data.model_matrix);
         // const uniform_stride = try gpu.stride(
         //     @sizeOf(gpu.Uniforms),
