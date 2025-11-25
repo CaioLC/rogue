@@ -1,3 +1,4 @@
+const std = @import("std");
 const zglfw = @import("zglfw");
 
 const window_title = "zig-gamedev: test windows";

@@ -15,6 +15,7 @@ const window = @import("./window.zig");
 const manager = @import("./resources_manager.zig");
 const camera = @import("./camera.zig");
 const gpu = @import("./gpu.zig");
+const input = @import("./input.zig");
 
 const embedded_font_data = @embedFile("./FiraCode-Medium.ttf");
 
@@ -44,6 +45,7 @@ const App = struct {
             0.01,
             100,
         );
+        input.init(window_state.z_window);
         return App{
             .window = window_state,
             .resources = resources,
