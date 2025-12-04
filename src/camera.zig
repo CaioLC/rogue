@@ -58,24 +58,24 @@ pub const Camera = struct {
     projection_matrix: zmath.Mat,
 
     pub fn init(camera_type: CameraType, window_ratio: f32, near: f32, far: f32) Camera {
-        const safe_near = near;
+        var safe_near = near;
         const world_view = zmath.identity();
         const camera_view = zmath.identity();
-        // const projection_view = proj: {
-        //     var pview: zmath.Mat = undefined;
-        //     switch (camera_type) {
-        //         .perspective => {
-        //             if (near == 0.0) {
-        //                 safe_near += 0.01; // projection matrix cannot have near == zero
-        //             }
-        //             pview = camera_type.perspective.make_projection(window_ratio, near, far);
-        //         },
-        //         .ortogonal => {
-        //             pview = camera_type.ortogonal.make_projection(window_ratio, near, far);
-        //         },
-        //     }
-        //     break :proj pview;
-        // };
+        const projection_view = proj: {
+            var pview: zmath.Mat = undefined;
+            switch (camera_type) {
+                .perspective => {
+                    if (near == 0.0) {
+                        safe_near += 0.01; // projection matrix cannot have near == zero
+                    }
+                    pview = camera_type.perspective.make_projection(window_ratio, near, far);
+                },
+                .ortogonal => {
+                    pview = camera_type.ortogonal.make_projection(window_ratio, near, far);
+                },
+            }
+            break :proj pview;
+        };
         return Camera{
             .camera_type = camera_type,
             .near = safe_near,
@@ -83,7 +83,7 @@ pub const Camera = struct {
             .window_ratio = window_ratio,
             .model_matrix = world_view,
             .view_matrix = camera_view,
-            .projection_matrix = zmath.identity(),
+            .projection_matrix = projection_view,
         };
     }
 
