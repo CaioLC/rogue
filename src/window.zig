@@ -28,7 +28,7 @@ pub const Window = struct {
         zglfw.terminate();
     }
 
-    pub fn update(self: *Window) void {
+    pub fn resize(self: *Window) void {
         const size = self.z_window.getSize();
         self.width = @intCast(size[0]);
         self.height = @intCast(size[1]);

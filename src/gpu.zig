@@ -4,8 +4,8 @@ const zgpu = @import("zgpu");
 const zmath = @import("zmath");
 const wgpu = zgpu.wgpu;
 const manager = @import("./resources_manager.zig");
-const content_dir = @import("build_options").assets;
 
+const content_dir = @import("build_options").assets;
 const geo_path = "geometry";
 
 const BufferCtx = struct { ready: bool, buffer: wgpu.Buffer };
@@ -78,14 +78,13 @@ pub const GlobalState = struct {
     bind_group_layouts: [1]wgpu.BindGroupLayout,
     pipeline_layout: wgpu.PipelineLayout,
     pipeline: wgpu.RenderPipeline,
-    buffers_manager: BuffersManager,
+    uniforms: UniformsManager,
     bindings: Bindings,
     depth_texture: DepthTexture,
 
     pub fn init(
         allocator: std.mem.Allocator,
         window: *zglfw.Window,
-        geometry: manager.Geometry,
     ) !GlobalState {
         const ctx = try initGraphicsContext(allocator, window);
 
@@ -104,16 +103,13 @@ pub const GlobalState = struct {
         );
 
         // initialize buffers
-        const buffers_manager = try BuffersManager.init(
-            ctx.device,
-            geometry,
-        );
+        const uniforms = try UniformsManager.init(ctx.device);
 
         // initialize bind_groups
         const bindings = Bindings.init(
             ctx.device,
             bind_group_layouts,
-            buffers_manager.uniform_buffer,
+            uniforms.uniform_buffer,
         );
 
         // initialize z-buffer
@@ -124,7 +120,7 @@ pub const GlobalState = struct {
             .bind_group_layouts = bind_group_layouts,
             .pipeline_layout = pipeline_layout,
             .pipeline = pipeline,
-            .buffers_manager = buffers_manager,
+            .uniforms = uniforms,
             .bindings = bindings,
             .depth_texture = depth,
         };
@@ -140,7 +136,8 @@ pub const GlobalState = struct {
         defer for (state.bind_group_layouts) |group| {
             group.release();
         };
-        defer state.buffers_manager.release();
+        defer state.uniforms.release();
+        defer state.bindings.release();
         defer state.depth_texture.release();
     }
 
@@ -314,16 +311,16 @@ pub fn create_buffer(
     return device.createBuffer(buf_desc);
 }
 
-pub const BuffersManager = struct {
+pub const GeometryBuffer = struct {
     point_buffer: wgpu.Buffer,
     color_buffer: wgpu.Buffer,
     index_buffer: wgpu.Buffer,
-    uniform_buffer: wgpu.Buffer,
+    geometry: *manager.Geometry,
 
     pub fn init(
         device: wgpu.Device,
-        geometry: manager.Geometry,
-    ) !BuffersManager {
+        geometry: *manager.Geometry,
+    ) !GeometryBuffer {
         std.debug.print("Initialize Buffers\n", .{});
         const point_buffer = create_buffer(
             device,
@@ -350,7 +347,34 @@ pub const BuffersManager = struct {
             geometry.index_data.items.len * @sizeOf(u16),
             wgpu.U32Bool.false,
         );
+        return GeometryBuffer{
+            .point_buffer = point_buffer,
+            .color_buffer = color_buffer,
+            .index_buffer = index_buffer,
+            .geometry = geometry,
+        };
+    }
 
+    pub fn release(self: *GeometryBuffer) void {
+        self.index_buffer.release();
+        self.color_buffer.release();
+        self.point_buffer.release();
+    }
+
+    pub fn write_buffers(self: *const GeometryBuffer, queue: wgpu.Queue) void {
+        queue.writeBuffer(self.point_buffer, 0, f32, self.geometry.point_data.items);
+        queue.writeBuffer(self.color_buffer, 0, f32, self.geometry.color_data.items);
+        queue.writeBuffer(self.index_buffer, 0, u16, self.geometry.index_data.items);
+    }
+};
+
+pub const UniformsManager = struct {
+    uniform_buffer: wgpu.Buffer,
+
+    pub fn init(
+        device: wgpu.Device,
+    ) !UniformsManager {
+        std.debug.print("Initialize Uniform Buffer\n", .{});
         // unifom buffer
         const uniform_buffer = create_buffer(
             device,
@@ -360,25 +384,13 @@ pub const BuffersManager = struct {
             wgpu.U32Bool.false,
         );
 
-        return BuffersManager{
-            .point_buffer = point_buffer,
-            .color_buffer = color_buffer,
-            .index_buffer = index_buffer,
+        return UniformsManager{
             .uniform_buffer = uniform_buffer,
         };
     }
 
-    pub fn release(self: *BuffersManager) void {
-        self.index_buffer.release();
-        self.color_buffer.release();
-        self.point_buffer.release();
+    pub fn release(self: *UniformsManager) void {
         self.uniform_buffer.release();
-    }
-
-    pub fn write_buffers(self: *const BuffersManager, queue: wgpu.Queue, geo: manager.Geometry) void {
-        queue.writeBuffer(self.point_buffer, 0, f32, geo.point_data.items);
-        queue.writeBuffer(self.color_buffer, 0, f32, geo.color_data.items);
-        queue.writeBuffer(self.index_buffer, 0, u16, geo.index_data.items);
     }
 };
 

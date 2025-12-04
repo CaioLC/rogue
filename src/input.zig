@@ -20,10 +20,10 @@ fn key_callback(_: *zglfw.Window, key: zglfw.Key, _: c_int, action: zglfw.Action
 
 fn cursor_callback(
     _: *zglfw.Window,
-    xpos: f64,
-    ypos: f64,
+    _: f64,
+    _: f64,
 ) callconv(.C) void {
-    std.debug.print("Cursor position: X: {} | Y: {}", .{ xpos, ypos });
+    // std.debug.print("Cursor position: X: {} | Y: {}", .{ xpos, ypos });
 }
 
 fn mouse_button_callback(
