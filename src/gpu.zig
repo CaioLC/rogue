@@ -233,7 +233,7 @@ fn create_render_pipeline(
             .topology = wgpu.PrimitiveTopology.triangle_list,
             .strip_index_format = wgpu.IndexFormat.undef,
             .front_face = wgpu.FrontFace.ccw,
-            .cull_mode = wgpu.CullMode.none, // TODO: set to front, once bugs are cleared
+            .cull_mode = wgpu.CullMode.back,
         },
         .fragment = &frag_state,
         .depth_stencil = &depth_stencil_state,
@@ -424,7 +424,6 @@ pub const Bindings = struct {
 pub const Uniforms = struct {
     projection_matrix: zmath.Mat,
     view_matrix: zmath.Mat,
-    model_matrix: zmath.Mat,
     color: [4]f32,
     time: f32,
     _pad: [3]f32 = undefined,

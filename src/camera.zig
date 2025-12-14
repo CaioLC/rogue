@@ -1,3 +1,4 @@
+const std = @import("std");
 const zmath = @import("zmath");
 
 pub const PerspectiveCamera = struct {
@@ -53,13 +54,11 @@ pub const Camera = struct {
     near: f32,
     far: f32,
     window_ratio: f32,
-    model_matrix: zmath.Mat,
     view_matrix: zmath.Mat,
     projection_matrix: zmath.Mat,
 
     pub fn init(camera_type: CameraType, window_ratio: f32, near: f32, far: f32) Camera {
         var safe_near = near;
-        const world_view = zmath.identity();
         const camera_view = zmath.identity();
         const projection_view = proj: {
             var pview: zmath.Mat = undefined;
@@ -81,9 +80,8 @@ pub const Camera = struct {
             .near = safe_near,
             .far = far,
             .window_ratio = window_ratio,
-            .model_matrix = world_view,
-            .view_matrix = camera_view,
-            .projection_matrix = projection_view,
+            .view_matrix = camera_view, // world to view
+            .projection_matrix = projection_view, // view to projection
         };
     }
 
@@ -102,5 +100,29 @@ pub const Camera = struct {
             break :proj pview;
         };
         self.projection_matrix = projection_view;
+    }
+
+    pub fn zoom(self: *Camera, xoffset: f32) void {
+        switch (self.camera_type) {
+            .perspective => {
+                self.camera_type.perspective.f_length -= xoffset;
+            },
+            .ortogonal => {
+                self.camera_type.ortogonal.scale -= xoffset;
+            },
+        }
+        self.resize(self.window_ratio);
+    }
+
+    pub fn move_x(self: *Camera, xoffset: f32) void {
+        self.view_matrix = zmath.mul(self.view_matrix, zmath.translation(xoffset, 0.0, 0.0));
+        std.debug.print("move_x at view", .{});
+        self.resize(self.window_ratio);
+    }
+
+    pub fn move_y(self: *Camera, yoffset: f32) void {
+        self.view_matrix = zmath.mul(self.view_matrix, zmath.translation(0.0, yoffset, 0.0));
+        std.debug.print("move_y at view", .{});
+        self.resize(self.window_ratio);
     }
 };

@@ -77,10 +77,6 @@ pub const Geometry = struct {
             } else if (line.len == 0 or line[0] == '#') {} else switch (current_section) {
                 .points => {
                     var tokens = std.mem.tokenizeScalar(u8, line, ' ');
-                    // if (tokens.buffer.len != 4) {
-                    //     std.debug.print("Failed to parse point line {}: {s}", .{ line_no, line });
-                    //     return error.BadContentLine;
-                    // }
                     while (tokens.next()) |token| {
                         // std.debug.print("\npoint token: {s}\n", .{token});
                         const value = try std.fmt.parseFloat(f32, token);
@@ -89,10 +85,6 @@ pub const Geometry = struct {
                 },
                 .colors => {
                     var tokens = std.mem.tokenizeScalar(u8, line, ' ');
-                    // if (tokens.buffer.len != 4) {
-                    //     std.debug.print("Failed to parse color line {}: {s}", .{ line_no, line });
-                    //     return error.BadContentLine;
-                    // }
                     while (tokens.next()) |token| {
                         const value = try std.fmt.parseFloat(f32, token);
                         try color_data.append(value);
@@ -100,10 +92,6 @@ pub const Geometry = struct {
                 },
                 .indices => {
                     var tokens = std.mem.tokenizeScalar(u8, line, ' ');
-                    // if (tokens.buffer.len != 3) {
-                    //     std.debug.print("Failed to parse index line {}: {s}", .{ line_no, line });
-                    //     return error.BadContentLine;
-                    // }
                     while (tokens.next()) |token| {
                         const value = try std.fmt.parseInt(u16, token, 10);
                         try index_data.append(value);
@@ -111,7 +99,6 @@ pub const Geometry = struct {
                 },
                 .none => {},
             }
-
             line_buffer.clearRetainingCapacity();
         }
         // round buffers:

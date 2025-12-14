@@ -3,7 +3,6 @@ const pi = 3.14159265359;
 struct MyUniforms {
     projectionMatrix: mat4x4<f32>,
     viewMatrix: mat4x4<f32>,
-    modelMatrix: mat4x4<f32>,
     color: vec4f,
     time: f32,
 };
@@ -23,7 +22,8 @@ struct VertexOutput {
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
-    out.position = uMyUniforms.projectionMatrix * uMyUniforms.viewMatrix * uMyUniforms.modelMatrix * in.position;
+    out.position = uMyUniforms.projectionMatrix * uMyUniforms.viewMatrix * in.position;
+    // out.position = in.position;
     out.color = in.color;
     return out;
 }

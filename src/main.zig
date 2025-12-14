@@ -24,7 +24,8 @@ const App = struct {
     window: window.Window,
     resources: manager.Resources,
     gpu: gpu.GlobalState,
-    camera: camera.Camera,
+    camera: *camera.Camera,
+    input_handler: *input.InputEventHandler,
 
     fn init(allocator: std.mem.Allocator) !App {
         // change current working directory to where the executable is located.
@@ -38,24 +39,34 @@ const App = struct {
         const window_state = try window.Window.init();
         const resources = try manager.Resources.load(allocator, content_dir);
         const gpu_state = try gpu.GlobalState.init(allocator, window_state.z_window);
-        const cam = camera.Camera.init(
+
+        const cam = try allocator.create(camera.Camera);
+        cam.* = camera.Camera.init(
             camera.CameraType{ .ortogonal = camera.OrtogonalCamera.init(5.0) },
             // camera.CameraType{ .perspective = camera.PerspectiveCamera.init(0.500) },
             window_state.ratio(),
             0.01,
             100,
         );
-        input.init(window_state.z_window);
+
+        const input_handler = try allocator.create(input.InputEventHandler);
+        input_handler.* = input.InputEventHandler.init(allocator, cam);
+
+        input.init(window_state.z_window, input_handler);
         return App{
             .window = window_state,
             .resources = resources,
             .gpu = gpu_state,
             .camera = cam,
+            .input_handler = input_handler,
         };
     }
 
     // Cleanup
     fn deinit(self: *App, allocator: std.mem.Allocator) void {
+        self.input_handler.deinit();
+        allocator.destroy(self.input_handler);
+        allocator.destroy(self.camera);
         self.gpu.release(allocator);
         self.resources.deinit();
         self.window.deinit();
@@ -78,56 +89,37 @@ pub fn main() !void {
     const z_window = app.window.z_window;
     var gpu_state = app.gpu;
     const gctx = gpu_state.ctx;
-    const pipeline = app.gpu.pipeline;
 
     // setup buffers
     print("Setup Buffers\n", .{});
     var queue = gctx.device.getQueue();
     var geo_buffer = try gpu.GeometryBuffer.init(gpu_state.ctx.device, &app.resources.geometry);
-    std.debug.print("geo: {}", .{app.resources.geometry});
     defer geo_buffer.release();
     geo_buffer.write_buffers(queue);
 
     var uniform_data = gpu.Uniforms{
         .projection_matrix = app.camera.projection_matrix,
         .view_matrix = app.camera.view_matrix,
-        .model_matrix = app.camera.model_matrix,
         .time = @floatCast(zglfw.getTime()),
         .color = .{ 0.0, 1.0, 0.4, 1.0 },
     };
 
-    // rotate world view
-    const S = zmath.scaling(0.6, 0.6, 0.6);
-    const R1 = zmath.rotationX(-3.0 * 3.14 / 4.0);
-    const T = zmath.translation(0.0, 0.0, 0.0);
-    const M = mul(mul(S, R1), T);
-    uniform_data.model_matrix = mul(uniform_data.model_matrix, M);
-
     // position camera
     uniform_data.view_matrix = mul(zmath.translation(0.0, 0.0, 2.0), uniform_data.view_matrix);
-    std.debug.print("UNIFORM DATA: {}", .{uniform_data});
 
+    print("Start Game Loop\n", .{});
     while (!z_window.shouldClose() and z_window.getKey(.escape) != .press) {
-        // poll system events
+        // poll system and GPU
         zglfw.pollEvents();
-        // poll GPU
         gctx.device.tick();
 
-        // update
-        // const mod_matrix = update_model();
-        // const view_matrix = update_camera();
+        // handle input
+        app.input_handler.handle_events();
 
-        // update uniforms
+        // update
         uniform_data.time = @floatCast(zglfw.getTime());
         uniform_data.projection_matrix = app.camera.projection_matrix;
-        const T2 = zmath.translation(0.1, 0.0, 0.0);
-        const R2 = zmath.rotationZ(-0.05);
-        const M2 = mul(T2, R2);
-        uniform_data.model_matrix = zmath.mul(M2, uniform_data.model_matrix);
-        // const uniform_stride = try gpu.stride(
-        //     @sizeOf(gpu.Uniforms),
-        //     gctx.device,
-        // );
+        uniform_data.view_matrix = app.camera.view_matrix;
         queue.writeBuffer(
             gpu_state.uniforms.uniform_buffer,
             0,
@@ -177,7 +169,7 @@ pub fn main() !void {
             // GUI pass
             {
                 const render_pass = encoder.beginRenderPass(render_pass_desc);
-                render_pass.setPipeline(pipeline);
+                render_pass.setPipeline(app.gpu.pipeline);
                 render_pass.setVertexBuffer(
                     0,
                     geo_buffer.point_buffer,
@@ -208,19 +200,7 @@ pub fn main() !void {
                     0,
                     0,
                 );
-                // render_pass.setBindGroup(
-                //     0,
-                //     gpu_state.bindings.uniforms_bind_group,
-                //     &[_]u32{uniform_stride},
-                // );
-                // render_pass.drawIndexed(
-                //     @intCast(app_state.resources.geometry.index_data.items.len),
-                //     1,
-                //     0,
-                //     0,
-                //     0,
-                // );
-                defer zgpu.endReleasePass(render_pass);
+                zgpu.endReleasePass(render_pass);
             }
 
             break :commands encoder.finish(null);
