@@ -3,22 +3,22 @@ const zgpu = @import("zgpu");
 const wgpu = zgpu.wgpu;
 
 pub const Resources = struct {
-    geometry: Geometry,
+    mesh: Mesh,
 
     pub fn load(allocator: std.mem.Allocator, content_dir: []const u8) !Resources {
-        const geo_path = try std.fs.path.join(allocator, &.{ content_dir, "/geometry" });
-        defer allocator.free(geo_path);
+        const mesh_path = try std.fs.path.join(allocator, &.{ content_dir, "/geometry" });
+        defer allocator.free(mesh_path);
 
-        const geometry = try Geometry.loadCustom(allocator, geo_path);
-        return Resources{ .geometry = geometry };
+        const mesh = try Mesh.loadCustom(allocator, mesh_path);
+        return Resources{ .mesh = mesh };
     }
 
     pub fn deinit(self: *Resources) void {
-        self.geometry.deinit();
+        self.mesh.deinit();
     }
 };
 
-pub const Geometry = struct {
+pub const Mesh = struct {
     point_data: std.ArrayList(f32),
     color_data: std.ArrayList(f32),
     index_data: std.ArrayList(u16),
@@ -26,7 +26,7 @@ pub const Geometry = struct {
     fn loadCustom(
         allocator: std.mem.Allocator,
         path: []const u8,
-    ) !Geometry {
+    ) !Mesh {
         var file = std.fs.cwd().openFile(path, .{}) catch |err| {
             std.log.err("failed to open file '{s}'; {s}", .{ path, @errorName(err) });
             return err;
@@ -115,14 +115,14 @@ pub const Geometry = struct {
             _ = try index_data.addManyAsSlice(@divExact(remainder, @sizeOf(f16)));
         }
 
-        return Geometry{
+        return Mesh{
             .point_data = point_data,
             .color_data = color_data,
             .index_data = index_data,
         };
     }
 
-    fn deinit(self: *Geometry) void {
+    fn deinit(self: *Mesh) void {
         self.point_data.deinit();
         self.color_data.deinit();
         self.index_data.deinit();

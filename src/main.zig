@@ -1,3 +1,5 @@
+// TODO: Resources should store an Array of meshes and other objects and handle pointers to them
+//
 const std = @import("std");
 const math = std.math;
 const assert = std.debug.assert;
@@ -93,9 +95,13 @@ pub fn main() !void {
     // setup buffers
     print("Setup Buffers\n", .{});
     var queue = gctx.device.getQueue();
-    var geo_buffer = try gpu.GeometryBuffer.init(gpu_state.ctx.device, &app.resources.geometry);
-    defer geo_buffer.release();
-    geo_buffer.write_buffers(queue);
+    var mesh_buffer = try gpu.GeometryBuffer.init(gpu_state.ctx.device, &app.resources.mesh);
+    defer mesh_buffer.release();
+    mesh_buffer.write_buffers(queue);
+
+    queue.writeBuffer(gpu_state.uniforms.model_mat_uniform, 0, gpu.ModelBuffer, &[_]gpu.ModelBuffer{
+        .{ .model_matrix = zmath.identity() },
+    });
 
     var uniform_data = gpu.Uniforms{
         .projection_matrix = app.camera.projection_matrix,
@@ -172,29 +178,34 @@ pub fn main() !void {
                 render_pass.setPipeline(app.gpu.pipeline);
                 render_pass.setVertexBuffer(
                     0,
-                    geo_buffer.point_buffer,
+                    mesh_buffer.point_buffer,
                     0,
-                    app.resources.geometry.point_data.items.len * @sizeOf(f32),
+                    app.resources.mesh.point_data.items.len * @sizeOf(f32),
                 );
                 render_pass.setVertexBuffer(
                     1,
-                    geo_buffer.color_buffer,
+                    mesh_buffer.color_buffer,
                     0,
-                    app.resources.geometry.color_data.items.len * @sizeOf(f32),
+                    app.resources.mesh.color_data.items.len * @sizeOf(f32),
                 );
                 render_pass.setIndexBuffer(
-                    geo_buffer.index_buffer,
+                    mesh_buffer.index_buffer,
                     wgpu.IndexFormat.uint16,
                     0,
-                    app.resources.geometry.index_data.items.len * @sizeOf(u16),
+                    app.resources.mesh.index_data.items.len * @sizeOf(u16),
                 );
                 render_pass.setBindGroup(
                     0,
                     gpu_state.bindings.uniforms_bind_group,
                     &[_]u32{0.0},
                 );
+                render_pass.setBindGroup(
+                    1,
+                    gpu_state.bindings.model_bing_group,
+                    &[_]u32{0.0},
+                );
                 render_pass.drawIndexed(
-                    @intCast(app.resources.geometry.index_data.items.len),
+                    @intCast(app.resources.mesh.index_data.items.len),
                     1,
                     0,
                     0,

@@ -75,7 +75,7 @@ fn bufferMapCallback(
 
 pub const GlobalState = struct {
     ctx: *zgpu.GraphicsContext,
-    bind_group_layouts: [1]wgpu.BindGroupLayout,
+    bind_group_layouts: [2]wgpu.BindGroupLayout,
     pipeline_layout: wgpu.PipelineLayout,
     pipeline: wgpu.RenderPipeline,
     uniforms: UniformsManager,
@@ -91,6 +91,7 @@ pub const GlobalState = struct {
         // Setup layout
         const bind_group_layouts = [_]wgpu.BindGroupLayout{
             Uniforms.bind_group_layout(ctx.device),
+            ModelBuffer.bind_group_layout(ctx.device),
         };
         const pipeline_layout = create_pipeline_layout(
             ctx.device,
@@ -110,6 +111,7 @@ pub const GlobalState = struct {
             ctx.device,
             bind_group_layouts,
             uniforms.uniform_buffer,
+            uniforms.model_mat_uniform,
         );
 
         // initialize z-buffer
@@ -315,11 +317,11 @@ pub const GeometryBuffer = struct {
     point_buffer: wgpu.Buffer,
     color_buffer: wgpu.Buffer,
     index_buffer: wgpu.Buffer,
-    geometry: *manager.Geometry,
+    mesh: *manager.Mesh,
 
     pub fn init(
         device: wgpu.Device,
-        geometry: *manager.Geometry,
+        geometry: *manager.Mesh,
     ) !GeometryBuffer {
         std.debug.print("Initialize Buffers\n", .{});
         const point_buffer = create_buffer(
@@ -351,7 +353,7 @@ pub const GeometryBuffer = struct {
             .point_buffer = point_buffer,
             .color_buffer = color_buffer,
             .index_buffer = index_buffer,
-            .geometry = geometry,
+            .mesh = geometry,
         };
     }
 
@@ -362,14 +364,15 @@ pub const GeometryBuffer = struct {
     }
 
     pub fn write_buffers(self: *const GeometryBuffer, queue: wgpu.Queue) void {
-        queue.writeBuffer(self.point_buffer, 0, f32, self.geometry.point_data.items);
-        queue.writeBuffer(self.color_buffer, 0, f32, self.geometry.color_data.items);
-        queue.writeBuffer(self.index_buffer, 0, u16, self.geometry.index_data.items);
+        queue.writeBuffer(self.point_buffer, 0, f32, self.mesh.point_data.items);
+        queue.writeBuffer(self.color_buffer, 0, f32, self.mesh.color_data.items);
+        queue.writeBuffer(self.index_buffer, 0, u16, self.mesh.index_data.items);
     }
 };
 
 pub const UniformsManager = struct {
     uniform_buffer: wgpu.Buffer,
+    model_mat_uniform: wgpu.Buffer,
 
     pub fn init(
         device: wgpu.Device,
@@ -384,8 +387,17 @@ pub const UniformsManager = struct {
             wgpu.U32Bool.false,
         );
 
+        const model_mat_uniform = create_buffer(
+            device,
+            "Model Matrix",
+            wgpu.BufferUsage{ .copy_dst = true, .uniform = true },
+            try stride(@sizeOf(ModelBuffer), device) + @sizeOf(ModelBuffer),
+            wgpu.U32Bool.false,
+        );
+
         return UniformsManager{
             .uniform_buffer = uniform_buffer,
+            .model_mat_uniform = model_mat_uniform,
         };
     }
 
@@ -396,28 +408,78 @@ pub const UniformsManager = struct {
 
 pub const Bindings = struct {
     uniforms_bind_group: wgpu.BindGroup,
+    model_bing_group: wgpu.BindGroup,
 
     pub fn init(
         device: wgpu.Device,
-        bind_group_layouts: [1]wgpu.BindGroupLayout,
+        bind_group_layouts: [2]wgpu.BindGroupLayout,
         uniform_buffer: wgpu.Buffer,
+        model_buffer: wgpu.Buffer,
     ) Bindings {
         // initialize bind groups
-        const bindings = [_]wgpu.BindGroupEntry{
+        const uniform_bindings = [_]wgpu.BindGroupEntry{
             Uniforms.bind_group(uniform_buffer),
         };
-        const bind_group_desc = wgpu.BindGroupDescriptor{
+        const uniform_bind_group_desc = wgpu.BindGroupDescriptor{
             .layout = bind_group_layouts[0],
-            .entry_count = bindings.len,
-            .entries = &bindings,
+            .entry_count = uniform_bindings.len,
+            .entries = &uniform_bindings,
         };
-        const bind_group = device.createBindGroup(bind_group_desc);
+        const uniform_bind_group = device.createBindGroup(uniform_bind_group_desc);
+
+        const model_mat_buffer = [_]wgpu.BindGroupEntry{
+            ModelBuffer.bind_group(model_buffer),
+        };
+        const model_bind_group_desc = wgpu.BindGroupDescriptor{
+            .layout = bind_group_layouts[1],
+            .entry_count = model_mat_buffer.len,
+            .entries = &model_mat_buffer,
+        };
+        const model_bind_group = device.createBindGroup(model_bind_group_desc);
         return Bindings{
-            .uniforms_bind_group = bind_group,
+            .uniforms_bind_group = uniform_bind_group,
+            .model_bing_group = model_bind_group,
         };
     }
     pub fn release(self: *Bindings) void {
-        defer self.uniforms_bind_group.release();
+        self.uniforms_bind_group.release();
+        self.model_bing_group.release();
+    }
+};
+
+pub const ModelBuffer = struct {
+    model_matrix: zmath.Mat,
+    // _pad: [3]f32 = undefined,
+
+    fn bind_group_layout(device: wgpu.Device) wgpu.BindGroupLayout {
+        const binding_layout = wgpu.BindGroupLayoutEntry{
+            .binding = 0,
+            .visibility = wgpu.ShaderStage{
+                .vertex = true,
+            },
+            .buffer = .{
+                .binding_type = wgpu.BufferBindingType.uniform,
+                .min_binding_size = @sizeOf(ModelBuffer),
+                .has_dynamic_offset = wgpu.U32Bool.true,
+            },
+        };
+        const bind_group_layout_desc = wgpu.BindGroupLayoutDescriptor{
+            .label = "model matrix group layout",
+            .entry_count = 1,
+            .entries = &[_]wgpu.BindGroupLayoutEntry{
+                binding_layout,
+            },
+        };
+        return device.createBindGroupLayout(bind_group_layout_desc);
+    }
+
+    fn bind_group(uniform_buffer: wgpu.Buffer) wgpu.BindGroupEntry {
+        return wgpu.BindGroupEntry{
+            .binding = 0,
+            .buffer = uniform_buffer,
+            .offset = 0,
+            .size = @sizeOf(ModelBuffer),
+        };
     }
 };
 
